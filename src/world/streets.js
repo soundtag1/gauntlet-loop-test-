@@ -181,7 +181,7 @@ function roadTexture(R){
   }
 
   // --- markings -----------------------------------------------------------
-  const lw = mx(0.14);                                  // line half-thickness
+  const lw = mx(0.17);                                  // line half-thickness
   // solid white edge lines 0.55 m in from each kerb
   paintRect(g, rg, R, mx(0.55) - lw, 0, lw*2, H, '#e6e4dc', 1.0);
   paintRect(g, rg, R, mx(CLEAR - 0.55) - lw, 0, lw*2, H, '#e6e4dc', 1.0);
@@ -228,7 +228,7 @@ function roadTextureDashed(R){
     const lc = R.bool() ? 2.5 : 7.5;
     oilStain(g, rg, R, mx(lc + R.f(-0.5,0.5)), R.f(0,H), mx(R.f(0.2,0.8)));
   }
-  const lw = mx(0.14);
+  const lw = mx(0.17);
   paintRect(g, rg, R, mx(0.6) - lw, 0, lw*2, H, '#dedbd2', 1.0);
   paintRect(g, rg, R, mx(CLEAR-0.6) - lw, 0, lw*2, H, '#dedbd2', 1.0);
   // dashed white centre: 3 m paint, 5 m gap, period 8 m -> tiles at 32 m
@@ -474,17 +474,22 @@ export class Streets {
       uNeonC: { value: new THREE.Color(0xffcf3f) },
     };
     this._c = new THREE.Color();
+    this.paintMats = [];
   }
 
   // ---- wet-asphalt material -------------------------------------------
   wetMaterial(tex, wetAmount, opts = {}){
     const m = new THREE.MeshStandardMaterial({
       map: tex.map, roughnessMap: tex.rough,
+      emissiveMap: tex.emis || null,
+      emissive: tex.emis ? new THREE.Color(0xc8ccd8) : new THREE.Color(0x000000),
+      emissiveIntensity: tex.emis ? 0.10 : 0.0,
       roughness: opts.roughness !== undefined ? opts.roughness : 1.0,
       metalness: opts.metalness !== undefined ? opts.metalness : 0.04,
       color: opts.color !== undefined ? opts.color : 0xffffff,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
+    if(tex.emis) this.paintMats.push(m);
     const U = this.U;
     const uWet = { value: wetAmount };
     const scale = { value: opts.wetScale !== undefined ? opts.wetScale : 1.0 };
@@ -514,12 +519,12 @@ export class Streets {
         }
         float wetMask(vec2 p){
           p *= uWetScale;
-          float n = svn(p*0.045)*0.55 + svn(p*0.13)*0.30 + svn(p*0.42)*0.15;
-          return smoothstep(0.50, 0.74, n);
+          float n = svn(p*0.032)*0.50 + svn(p*0.11)*0.32 + svn(p*0.37)*0.18;
+          return smoothstep(0.40, 0.70, n);
         }`)
         .replace('#include <map_fragment>', `#include <map_fragment>
         float wetA = wetMask(vWPos.xz) * uWet;
-        diffuseColor.rgb *= mix(1.0, 0.40, wetA);`)
+        diffuseColor.rgb *= mix(1.0, 0.52, wetA);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = mix(roughnessFactor, 0.055, wetA);`)
         .replace('#include <fog_fragment>', `
@@ -527,21 +532,30 @@ export class Streets {
           vec3 vdir = cameraPosition - vWPos;
           float dist = length(vdir);
           vdir /= max(dist, 0.001);
-          float fres = pow(1.0 - clamp(vdir.y, 0.0, 1.0), 4.0);
+          // grazing-angle fresnel: exponent 2 so the sheen reaches the near road
+          float fres = pow(1.0 - clamp(vdir.y, 0.0, 1.0), 2.0);
           vec2 fwd = normalize(vec2(vWPos.x, vWPos.z) - vec2(cameraPosition.x, cameraPosition.z) + vec2(1e-4));
           vec2 sid = vec2(-fwd.y, fwd.x);
           float along  = dot(vWPos.xz, fwd);
           float across = dot(vWPos.xz, sid);
-          // streaks stretched ALONG the view ray -> read as vertical smears
-          float st = svn(vec2(across*1.7, along*0.045));
-          st = st*0.6 + svn(vec2(across*5.1, along*0.10))*0.4;
-          st = smoothstep(0.30, 0.92, st);
-          vec2 cell = floor((vWPos.xz + fwd*26.0) / 41.0);
-          float hcell = sh21(cell);
-          vec3 neon = mix(uNeonA, uNeonB, smoothstep(0.30, 0.36, hcell));
-          neon = mix(neon, uNeonC, smoothstep(0.66, 0.72, hcell));
-          vec3 refl = mix(uSkyCol * 0.55, neon, uNight);
-          gl_FragColor.rgb += refl * (wetA * fres * st * (0.30 + 1.35*uNight));
+          // three octaves, all stretched hard ALONG the view ray so they read as
+          // vertical smears on screen, broken up across the ray.
+          float st = svn(vec2(across*0.9,  along*0.020))*0.45
+                   + svn(vec2(across*3.1,  along*0.055))*0.33
+                   + svn(vec2(across*11.0, along*0.130))*0.22;
+          st = smoothstep(0.22, 0.86, st);
+          // whole road is faintly damp; puddles reflect much harder
+          float sheen = 0.16 + 0.84 * wetA;
+          // smooth, slowly-drifting neon tint (no hard cell edges)
+          vec2 cp = (vWPos.xz + fwd*24.0) / 46.0;
+          float hcell = svn(cp);
+          vec3 neon = mix(uNeonA, uNeonB, smoothstep(0.28, 0.55, hcell));
+          neon = mix(neon, uNeonC, smoothstep(0.62, 0.86, hcell));
+          neon = mix(neon, vec3(1.0), 0.22);           // keep it off the gamut wall
+          vec3 refl = mix(uSkyCol * 0.42, neon, uNight);
+          float amp = sheen * fres * st * (0.22 + 0.80 * uNight);
+          amp *= mix(0.55, 1.0, smoothstep(4.0, 40.0, dist));   // no hot spot at the toes
+          gl_FragColor.rgb += refl * amp;
         }
         #include <fog_fragment>`);
     };
@@ -781,5 +795,8 @@ export class Streets {
     if(c.sky && c.sky.uniforms && c.sky.uniforms.uHorizon){
       this.U.uSkyCol.value.copy(c.sky.uniforms.uHorizon.value);
     }
+    // retro-reflective paint: barely there by day, clearly legible at night
+    const ei = 0.05 + 0.55 * nf;
+    for(let i = 0; i < this.paintMats.length; i++) this.paintMats[i].emissiveIntensity = ei;
   }
 }

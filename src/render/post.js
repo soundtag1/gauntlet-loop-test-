@@ -14,7 +14,7 @@ const GradeShader = {
     uVignette:{value:0.62}, uAberration:{value:0.0022},
     uLift:{value:new THREE.Vector3(0.010, 0.020, 0.034)},   // shadows -> teal
     uGain:{value:new THREE.Vector3(1.045, 1.005, 0.960)},   // highlights -> warm
-    uSaturation:{value:1.12}, uContrast:{value:1.06},
+    uSaturation:{value:1.06}, uContrast:{value:1.06},
   },
   vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader:`
@@ -55,7 +55,7 @@ export function buildComposer(renderer, scene, camera, w, h){
   composer.setSize(w,h);
   composer.addPass(new RenderPass(scene,camera));
 
-  const bloom=new UnrealBloomPass(new THREE.Vector2(w,h), 0.62, 0.72, 0.72);
+  const bloom=new UnrealBloomPass(new THREE.Vector2(w,h), 0.40, 0.48, 0.86);
   composer.addPass(bloom);
 
   const output=new OutputPass();               // ACES filmic + sRGB
