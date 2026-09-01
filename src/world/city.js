@@ -6,13 +6,13 @@ import { CONFIG } from '../core/config.js';
 // skyline is never a uniform box field (rubric §4).
 const DISTRICTS = {
   downtown:  { hMin:30, hMax:96, density:0.90, neon:0.55,
-               palette:[0xb9c2d0,0x9aa6b8,0xd7dce4,0x8892a4,0xc9c2b4,0xe2ddd2] },
+               palette:[0xdcd4c4,0xeadfc9,0xc9bda8,0xb3bcc4,0xd8bd96,0xc4b199] },
   strip:     { hMin:8,  hMax:24, density:0.86, neon:1.00,
-               palette:[0xf2e6d8,0xe8c9a8,0xd97f6a,0xf0d2b0,0xe9b98c,0xf6efe2] },
+               palette:[0xf2e6d8,0xe8c9a8,0xd97f6a,0xe9b98c,0xd4936f,0xf0dcc2] },
   residential:{hMin:7,  hMax:18, density:0.74, neon:0.18,
-               palette:[0xf4ddc4,0xe3b894,0xd8c2a8,0xefe0cc,0xdca88a,0xf7ecdc] },
+               palette:[0xe8c9a8,0xd9b48e,0xe6d2b4,0xd97f6a,0xcfa07e,0xf2e6d8] },
   industrial:{ hMin:6,  hMax:15, density:0.68, neon:0.25,
-               palette:[0xbdb3a2,0xa2988a,0xc8c1b2,0x9b917f,0xd0c4ae,0xb0a08c] },
+               palette:[0xb5a794,0x9c8f7c,0xc3b8a4,0x8e8474,0xc7b294,0xa89880] },
   beach:     { hMin:11, hMax:34, density:0.56, neon:0.62,
                palette:[0xffffff,0xfdf2e2,0xf7e0c8,0xffeed8,0xf3e4ce,0xfff8ec] },
 };
@@ -153,7 +153,7 @@ export class City {
         x:cx, z:cz, w, d, h,
         district:dName, colour:R.pick(D.palette), neon:D.neon, seed:R.i(0,1e6),
         landmark,                       // used by Buildings for massing + crowns
-        tint:R.f(0.90,1.10),            // per-building albedo variation
+        tint:R.f(0.86,1.12),            // per-building albedo variation
         grime:R.f(0.0,1.0),             // per-building weathering amount
       });
     }

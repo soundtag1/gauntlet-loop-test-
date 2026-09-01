@@ -29,14 +29,32 @@ const DECL_V = `
 attribute vec3 aTint;
 attribute float aLit;
 attribute vec2 aUvOff;
+attribute vec3 aRoofCol;
+varying vec3 vRoofCol;
 varying vec3 vTint;
 varying float vLit;
 varying float vRoof;
+varying float vWorldY;
 `;
 const DECL_F = `
+uniform float uNight;
+varying vec3 vRoofCol;
 varying vec3 vTint;
 varying float vLit;
 varying float vRoof;
+varying float vWorldY;
+`;
+
+// Fake environment response so no surface is ever pure black (rubric S1/S2):
+//  * a warm street-lamp / shopfront bounce that falls off with height at night
+//  * a faint cool sky-bounce so shaded daytime faces keep a colour cast
+const AMBIENT_INJECT = `
+  // glass barely picks up the bounce, so unlit windows stay dark against the wall
+  float amb = mix(0.35, 1.0, wallMask);
+  float sg = exp(-max(vWorldY - 1.5, 0.0) * 0.125) * (1.0 - vRoof);
+  totalEmissiveRadiance += diffuseColor.rgb * amb * (
+      uNight * (vec3(1.30, 0.90, 0.55) * sg * 0.58 + vec3(0.34, 0.38, 0.56) * 0.080)
+    + (1.0 - uNight) * vec3(0.075, 0.086, 0.105) );
 `;
 
 // Tint + roof handling shared by every building material.
@@ -44,9 +62,18 @@ function fragInject(mat, roofCol){
   return `
     float wallMask = diffuseColor.a;
     diffuseColor.rgb *= mix(vec3(1.0), vTint, wallMask);
-    diffuseColor.rgb = mix(diffuseColor.rgb, ${roofCol} * (0.55 + 0.45*vTint), vRoof);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vRoofCol * ${roofCol}, vRoof);
     diffuseColor.a = 1.0;
   `;
+}
+
+function worldYInject(){
+  return `
+        #ifdef USE_INSTANCING
+          vWorldY = (modelMatrix * instanceMatrix * vec4(position, 1.0)).y;
+        #else
+          vWorldY = (modelMatrix * vec4(position, 1.0)).y;
+        #endif`;
 }
 
 function facadeMaterial(map, emap, opts){
@@ -59,8 +86,9 @@ function facadeMaterial(map, emap, opts){
       .replace('#include <common>', `#include <common>\n${DECL_V}\n${opts.uvFn}`)
       .replace('#include <uv_vertex>', `#include <uv_vertex>
         vTint = aTint;
+        vRoofCol = aRoofCol;
         vLit = aLit;
-        vRoof = step(0.5, abs(normal.y));
+        vRoof = step(0.5, abs(normal.y));${worldYInject()}
         #ifdef USE_INSTANCING
           vec2 tiled = tileUv(uv, normal, instanceMatrix) + aUvOff;
           vMapUv = tiled;
@@ -68,32 +96,37 @@ function facadeMaterial(map, emap, opts){
             vEmissiveMapUv = tiled;
           #endif
         #endif`);
+    sh.uniforms.uNight = opts.uNight;
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>\n${DECL_F}`)
       .replace('#include <map_fragment>', `#include <map_fragment>\n${fragInject(m, opts.roofCol)}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance *= vLit * (1.0 - vRoof);`);
+        totalEmissiveRadiance *= vLit * (1.0 - vRoof);
+        ${AMBIENT_INJECT}`);
   };
   m.customProgramCacheKey = ()=>opts.key;
   return m;
 }
 
 // Plain tinted material (rooftops, balconies, awnings) — no uv retiling.
-function tintedMaterial(base){
+function tintedMaterial(base, uNight){
   const m = new THREE.MeshStandardMaterial(base);
   m.onBeforeCompile = (sh)=>{
+    sh.uniforms.uNight = uNight;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>\n${DECL_V}`)
       .replace('#include <uv_vertex>', `#include <uv_vertex>
-        vTint = aTint; vLit = aLit; vRoof = step(0.5, abs(normal.y));`);
+        vTint = aTint; vRoofCol = aRoofCol; vLit = aLit; vRoof = step(0.5, abs(normal.y));${worldYInject()}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>\n${DECL_F}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
+        float wallMask = 1.0;
         diffuseColor.rgb *= vTint;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance *= vLit;`);
+        totalEmissiveRadiance *= vLit;
+        ${AMBIENT_INJECT}`);
   };
-  m.customProgramCacheKey = ()=>'tinted-v1';
+  m.customProgramCacheKey = ()=>'tinted-v3';
   return m;
 }
 
@@ -110,7 +143,22 @@ function noiseInto(g, W, H, rand, amp){
   g.putImageData(img,0,0);
 }
 
-// Body facade. 8x8 window grid; windows ~25% of surface, wall dominates.
+// Shared helper: stamp the wall/glass mask into the alpha channel.
+// alpha 255 = wall (takes the per-building tint), low alpha = glass (stays neutral).
+function stampMask(g, W, H, rects){
+  const img=g.getImageData(0,0,W,H), d=img.data;
+  for(let i=0;i<d.length;i+=4) d[i+3]=255;
+  for(const [x0,y0,w,h,a] of rects){
+    const xs=Math.max(0,Math.round(x0)), ys=Math.max(0,Math.round(y0));
+    const xe=Math.min(W,Math.round(x0+w)), ye=Math.min(H,Math.round(y0+h));
+    for(let j=ys;j<ye;j++) for(let k=xs;k<xe;k++) d[((j*W)+k)*4+3]=a;
+  }
+  g.putImageData(img,0,0);
+}
+
+// Punched-window facade for low/mid-rise stucco blocks.
+// The wall is a bright warm plaster and windows cover ~22% of the surface, so a
+// sunlit face reads as its district colour rather than as a grid of black holes.
 function facadeTexture(rand){
   const W=256,H=256;
   const cw=document.createElement('canvas'); cw.width=W; cw.height=H;
@@ -118,85 +166,163 @@ function facadeTexture(rand){
   const em=document.createElement('canvas'); em.width=W; em.height=H;
   const eg=em.getContext('2d'); eg.fillStyle='#000'; eg.fillRect(0,0,W,H);
 
-  // wall: light neutral, tinted per-instance. alpha=255 => "this is wall".
-  g.fillStyle='rgb(232,227,218)'; g.fillRect(0,0,W,H);
-  noiseInto(g,W,H,rand,9);
+  g.fillStyle='rgb(243,239,231)'; g.fillRect(0,0,W,H);
+  noiseInto(g,W,H,rand,7);
 
   const cols=8, rows=8, cwd=W/cols, chd=H/rows;
 
-  // floor slab / spandrel banding + pilasters (depth without extra geometry)
+  // floor-slab banding + pilasters: shallow, so they do not darken the wall
   for(let r=0;r<=rows;r++){
     const y=r*chd;
-    g.fillStyle='rgba(0,0,0,0.13)'; g.fillRect(0,y-2,W,2);
-    g.fillStyle='rgba(255,255,255,0.20)'; g.fillRect(0,y,W,1);
+    g.fillStyle='rgba(120,108,92,0.16)'; g.fillRect(0,y-2,W,2);
+    g.fillStyle='rgba(255,255,255,0.30)'; g.fillRect(0,y,W,1);
   }
   for(let c=0;c<=cols;c++){
     const x=c*cwd;
-    g.fillStyle='rgba(0,0,0,0.07)'; g.fillRect(x-1,0,1,H);
-    g.fillStyle='rgba(255,255,255,0.10)'; g.fillRect(x,0,1,H);
+    g.fillStyle='rgba(120,108,92,0.07)'; g.fillRect(x-1,0,1,H);
+    g.fillStyle='rgba(255,255,255,0.12)'; g.fillRect(x,0,1,H);
   }
 
-  const ww=16, wh=18;            // 16x18 of a 32x32 cell => 28% coverage
+  const ww=14, wh=16;                 // 224/1024 -> 22% glass coverage
+  const mask=[];
   for(let r=0;r<rows;r++){
-    // whole-floor lighting modes: some floors dark, some fully lit
     const roll=rand.f(0,1);
-    const floorMode = roll<0.20 ? 0 : roll<0.34 ? 2 : 1;   // 0 dark, 1 mixed, 2 lit
+    const floorMode = roll<0.20 ? 0 : roll<0.36 ? 2 : 1;   // dark / mixed / lit floor
     for(let c=0;c<cols;c++){
       const x=Math.round(c*cwd + (cwd-ww)/2);
       const y=Math.round(r*chd + (chd-wh)/2);
-      // reveal / recess shadow (thin, so it does not eat the wall)
-      g.fillStyle='rgba(0,0,0,0.30)'; g.fillRect(x-1,y-1,ww+2,wh+2);
 
-      // dark tinted glass with a sky gradient — neutral, masked out of the tint
+      // --- opening: reveal shadow on the head + left jamb only (an inset hole)
+      g.fillStyle='rgba(96,84,68,0.55)'; g.fillRect(x-1.5,y-1.5,ww+3,2.0);
+      g.fillStyle='rgba(96,84,68,0.35)'; g.fillRect(x-1.5,y-1.5,2.0,wh+3);
+
+      // --- glass: sky-reflecting, mid-tone. Never near-black.
       const grd=g.createLinearGradient(x,y,x,y+wh);
-      grd.addColorStop(0,'rgb(96,118,140)');
-      grd.addColorStop(0.55,'rgb(58,74,96)');
-      grd.addColorStop(1,'rgb(34,44,60)');
+      grd.addColorStop(0,'rgb(168,190,208)');
+      grd.addColorStop(0.42,'rgb(120,142,166)');
+      grd.addColorStop(1,'rgb(78,96,120)');
       g.fillStyle=grd; g.fillRect(x,y,ww,wh);
-      if(rand.bool(0.22)){ // blinds / curtains
-        g.fillStyle='rgba(215,210,196,0.55)';
+      if(rand.bool(0.24)){                       // blinds / net curtains
+        g.fillStyle='rgba(228,222,206,0.60)';
         const n=rand.i(2,4);
-        for(let b=0;b<n;b++) g.fillRect(x,y+b*3,ww,1.4);
+        for(let bl=0;bl<n;bl++) g.fillRect(x,y+bl*3,ww,1.4);
       }
-      // sill + head reveal
-      g.fillStyle='rgba(255,255,255,0.35)'; g.fillRect(x-2,y+wh+1,ww+4,1.5);
-      g.fillStyle='rgba(0,0,0,0.18)'; g.fillRect(x-2,y-2,ww+4,1.2);
 
-      const lit = floorMode===2 ? rand.bool(0.88) : floorMode===1 ? rand.bool(0.42) : rand.bool(0.05);
+      // --- frame: mullion + transom so the window reads as joinery, not a decal
+      g.fillStyle='rgba(246,242,234,0.85)';
+      g.fillRect(x+ww/2-0.9, y, 1.8, wh);         // vertical mullion
+      g.fillRect(x, y+wh*0.42-0.7, ww, 1.4);      // transom
+      g.strokeStyle='rgba(250,246,238,0.75)'; g.lineWidth=1.2;
+      g.strokeRect(x+0.6,y+0.6,ww-1.2,wh-1.2);    // frame
+
+      // --- sill: bright nosing with its own drop shadow
+      g.fillStyle='rgba(255,253,246,0.95)'; g.fillRect(x-2.5,y+wh,ww+5,2.2);
+      g.fillStyle='rgba(110,96,78,0.42)';  g.fillRect(x-2.5,y+wh+2.2,ww+5,1.6);
+
+      const lit = floorMode===2 ? rand.bool(0.88) : floorMode===1 ? rand.bool(0.44) : rand.bool(0.05);
       if(lit){
         const warm=rand.bool(0.78);
         const col = warm ? [255, 206+(rand.f(-18,18)|0), 148+(rand.f(-26,26)|0)]
                          : [156+(rand.f(-26,26)|0), 214, 246];
-        const k = rand.f(0.45,1.0);
-        eg.fillStyle=`rgb(${(col[0]*k)|0},${(col[1]*k)|0},${(col[2]*k)|0})`;
-        eg.fillRect(x,y,ww,wh);
-        // a warm smear of the interior spilling onto the albedo too
-        g.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.16)`; g.fillRect(x,y,ww,wh);
+        const k = rand.f(0.5,1.0);
+        // ceiling-bright interior falling off toward the sill
+        const eGrd=eg.createLinearGradient(x,y,x,y+wh);
+        eGrd.addColorStop(0,`rgb(${(col[0]*k)|0},${(col[1]*k)|0},${(col[2]*k)|0})`);
+        eGrd.addColorStop(1,`rgb(${(col[0]*k*0.45)|0},${(col[1]*k*0.45)|0},${(col[2]*k*0.45)|0})`);
+        eg.fillStyle=eGrd; eg.fillRect(x,y,ww,wh);
+        // the joinery stays dark against the glow -> panes read separately
+        eg.fillStyle='rgba(0,0,0,0.85)';
+        eg.fillRect(x+ww/2-0.9, y, 1.8, wh);
+        eg.fillRect(x, y+wh*0.42-0.7, ww, 1.4);
+        eg.strokeStyle='rgba(0,0,0,0.8)'; eg.lineWidth=1.4; eg.strokeRect(x+0.7,y+0.7,ww-1.4,wh-1.4);
+        g.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.14)`; g.fillRect(x,y,ww,wh);
       }
+      mask.push([x,y,ww,wh,24]);
     }
   }
 
-  // weathering: grime streaks running down from sills, heavier low on the tile
-  for(let i=0;i<70;i++){
-    const x=rand.f(0,W), y=rand.f(0,H), h=rand.f(6,40), w=rand.f(1,3.5);
-    g.fillStyle=`rgba(60,54,46,${rand.f(0.03,0.10)})`;
+  // weathering: light grime streaks below sills, a touch of soot at the base
+  for(let i=0;i<48;i++){
+    const x=rand.f(0,W), y=rand.f(0,H), h=rand.f(5,26), w=rand.f(1,3);
+    g.fillStyle=`rgba(104,94,80,${rand.f(0.02,0.06)})`;
     g.fillRect(x,y,w,h);
   }
-  const gg=g.createLinearGradient(0,H*0.6,0,H);
-  gg.addColorStop(0,'rgba(56,50,42,0)'); gg.addColorStop(1,'rgba(56,50,42,0.14)');
-  g.fillStyle=gg; g.fillRect(0,H*0.6,W,H*0.4);
+  const gg=g.createLinearGradient(0,H*0.72,0,H);
+  gg.addColorStop(0,'rgba(96,86,72,0)'); gg.addColorStop(1,'rgba(96,86,72,0.09)');
+  g.fillStyle=gg; g.fillRect(0,H*0.72,W,H*0.28);
 
-  // ---- wall/glass mask into the alpha channel -----------------------------
-  const img=g.getImageData(0,0,W,H), d=img.data;
-  for(let i=0;i<d.length;i+=4) d[i+3]=255;
-  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
-    const x=Math.round(c*cwd + (cwd-ww)/2), y=Math.round(r*chd + (chd-wh)/2);
-    for(let j=y;j<y+wh;j++) for(let k=x;k<x+ww;k++){
-      const idx=((j*W)+k)*4+3; if(idx<d.length) d[idx]=26;
+  stampMask(g,W,H,mask);
+  return { map:mkTex(cw), emap:mkTex(em) };
+}
+
+// Curtain-wall facade for downtown towers: horizontal glazing ribbons between
+// tinted spandrel bands, split by vertical mullions. Reads as a commercial
+// tower rather than a grid of punched holes, and gives the skyline two
+// distinctly different facade languages for one extra draw call.
+function curtainTexture(rand){
+  const W=256,H=256;
+  const cw=document.createElement('canvas'); cw.width=W; cw.height=H;
+  const g=cw.getContext('2d');
+  const em=document.createElement('canvas'); em.width=W; em.height=H;
+  const eg=em.getContext('2d'); eg.fillStyle='#000'; eg.fillRect(0,0,W,H);
+
+  g.fillStyle='rgb(236,232,224)'; g.fillRect(0,0,W,H);
+  noiseInto(g,W,H,rand,6);
+
+  const rows=8, rh=H/rows, panes=8, pw=W/panes;
+  const gTop=4, gH=Math.round(rh*0.56);          // glazing ribbon inside each floor
+  const mask=[];
+
+  for(let r=0;r<rows;r++){
+    const y0=Math.round(r*rh)+gTop;
+    // spandrel band under the ribbon: solid, tinted, slightly darker than wall
+    g.fillStyle='rgba(120,110,96,0.18)';
+    g.fillRect(0, y0+gH, W, rh-gH-gTop);
+    g.fillStyle='rgba(255,255,255,0.28)'; g.fillRect(0, y0+gH+1.5, W, 1.2);
+
+    // the glazing ribbon
+    const grd=g.createLinearGradient(0,y0,0,y0+gH);
+    grd.addColorStop(0,'rgb(158,182,202)');
+    grd.addColorStop(0.45,'rgb(104,128,152)');
+    grd.addColorStop(1,'rgb(70,88,112)');
+    g.fillStyle=grd; g.fillRect(0,y0,W,gH);
+    g.fillStyle='rgba(92,80,66,0.55)'; g.fillRect(0,y0-1.6,W,1.6);   // head reveal
+    g.fillStyle='rgba(255,253,246,0.85)'; g.fillRect(0,y0+gH,W,1.6); // sill nosing
+
+    const roll=rand.f(0,1);
+    const floorMode = roll<0.24 ? 0 : roll<0.38 ? 2 : 1;
+    for(let c=0;c<panes;c++){
+      const x=Math.round(c*pw);
+      const lit = floorMode===2 ? rand.bool(0.85) : floorMode===1 ? rand.bool(0.40) : rand.bool(0.04);
+      if(lit){
+        const warm=rand.bool(0.62);
+        const col = warm ? [255, 214+(rand.f(-16,16)|0), 162+(rand.f(-22,22)|0)]
+                         : [172+(rand.f(-24,24)|0), 224, 250];
+        const k=rand.f(0.5,1.0);
+        const eGrd=eg.createLinearGradient(0,y0,0,y0+gH);
+        eGrd.addColorStop(0,`rgb(${(col[0]*k)|0},${(col[1]*k)|0},${(col[2]*k)|0})`);
+        eGrd.addColorStop(1,`rgb(${(col[0]*k*0.5)|0},${(col[1]*k*0.5)|0},${(col[2]*k*0.5)|0})`);
+        eg.fillStyle=eGrd; eg.fillRect(x+2,y0+1,pw-4,gH-2);
+        g.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.13)`; g.fillRect(x+2,y0+1,pw-4,gH-2);
+      }
+      if(rand.bool(0.16)){ // blinds half-drawn
+        g.fillStyle='rgba(226,220,204,0.45)'; g.fillRect(x+2,y0+1,pw-4,gH*rand.f(0.25,0.5));
+      }
     }
+    // vertical mullions over the whole ribbon
+    for(let c=0;c<=panes;c++){
+      const x=Math.round(c*pw);
+      g.fillStyle='rgba(246,242,234,0.90)'; g.fillRect(x-1.1,y0-1,2.2,gH+2);
+      eg.fillStyle='rgba(0,0,0,0.9)';       eg.fillRect(x-1.1,y0-1,2.2,gH+2);
+    }
+    mask.push([0,y0,W,gH,26]);
   }
-  g.putImageData(img,0,0);
 
+  for(let i=0;i<40;i++){
+    g.fillStyle=`rgba(104,94,80,${rand.f(0.02,0.05)})`;
+    g.fillRect(rand.f(0,W),rand.f(0,H),rand.f(1,3),rand.f(6,30));
+  }
+  stampMask(g,W,H,mask);
   return { map:mkTex(cw), emap:mkTex(em) };
 }
 
@@ -208,13 +334,13 @@ function shopTexture(rand){
   const em=document.createElement('canvas'); em.width=W; em.height=H;
   const eg=em.getContext('2d'); eg.fillStyle='#000'; eg.fillRect(0,0,W,H);
 
-  g.fillStyle='rgb(226,220,210)'; g.fillRect(0,0,W,H);
-  noiseInto(g,W,H,rand,8);
+  g.fillStyle='rgb(240,235,226)'; g.fillRect(0,0,W,H);
+  noiseInto(g,W,H,rand,7);
 
   const bays=4, bw=W/bays;
   const FASCIA=44, HEAD=56, SILL=210;    // canvas Y: 0 = top of the 4.2m band
   // continuous fascia band across the whole frontage
-  g.fillStyle='rgba(46,42,38,0.82)'; g.fillRect(0,0,W,FASCIA);
+  g.fillStyle='rgba(58,52,46,0.62)'; g.fillRect(0,0,W,FASCIA);
   g.fillStyle='rgba(255,255,255,0.13)'; g.fillRect(0,FASCIA-3,W,3);
 
   for(let b=0;b<bays;b++){
@@ -329,29 +455,32 @@ function mkTex(canvas){
 
 class Bucket {
   constructor(geo, mat){ this.geo=geo; this.mat=mat; this.items=[]; }
-  add(x,y,z,w,h,d,tint,rot=0,lit=1,uo=0,vo=0){
-    this.items.push([x,y,z,w,h,d,tint,rot,lit,uo,vo]);
+  add(x,y,z,w,h,d,tint,rot=0,lit=1,uo=0,vo=0,roof=null){
+    this.items.push([x,y,z,w,h,d,tint,rot,lit,uo,vo,roof||tint]);
   }
   finish(group, castShadow=true){
     const n=this.items.length; if(!n) return null;
     const geo=this.geo.clone();
     const tints=new Float32Array(n*3), lits=new Float32Array(n), uvo=new Float32Array(n*2);
+    const roofs=new Float32Array(n*3);
     const mesh=new THREE.InstancedMesh(geo, this.mat, n);
     mesh.castShadow=castShadow; mesh.receiveShadow=true;
     const m4=new THREE.Matrix4(), q=new THREE.Quaternion(),
           pos=new THREE.Vector3(), scl=new THREE.Vector3(), up=new THREE.Vector3(0,1,0);
     this.items.forEach((it,i)=>{
-      const [x,y,z,w,h,d,t,rot,lit,uo,vo]=it;
+      const [x,y,z,w,h,d,t,rot,lit,uo,vo,rc]=it;
       q.setFromAxisAngle(up, rot);
       pos.set(x,y,z); scl.set(w,h,d);
       m4.compose(pos,q,scl);
       mesh.setMatrixAt(i,m4);
       tints[i*3]=t.r; tints[i*3+1]=t.g; tints[i*3+2]=t.b;
+      roofs[i*3]=rc.r; roofs[i*3+1]=rc.g; roofs[i*3+2]=rc.b;
       lits[i]=lit; uvo[i*2]=uo; uvo[i*2+1]=vo;
     });
     geo.setAttribute('aTint', new THREE.InstancedBufferAttribute(tints,3));
     geo.setAttribute('aLit',  new THREE.InstancedBufferAttribute(lits,1));
     geo.setAttribute('aUvOff',new THREE.InstancedBufferAttribute(uvo,2));
+    geo.setAttribute('aRoofCol', new THREE.InstancedBufferAttribute(roofs,3));
     mesh.instanceMatrix.needsUpdate=true;
     mesh.frustumCulled=false;
     group.add(mesh);
@@ -372,22 +501,30 @@ function massing(b, R, gh){
   const tall = b.landmark || b.h>52;
 
   if(tall){
-    // podium + shaft + crown, stepping in as it rises
-    const hp = base + Math.min(H*0.30, R.f(9,20));
-    push(b.x,b.z,b.w,b.d, base, hp);
-    let tw=b.w*R.f(0.58,0.76), td=b.d*R.f(0.58,0.76);
-    const ox=R.f(-1,1)*(b.w-tw)*0.22, oz=R.f(-1,1)*(b.d-td)*0.22;
-    const steps=R.i(2,4);
+    // podium + shaft + crown, stepping in as it rises.
+    // The shaft is sometimes turned 45deg on its podium, or run as a thin slab,
+    // so downtown is not a field of identical extrusions.
+    const noPodium = R.bool(0.22);
+    const hp = noPodium ? base : base + Math.min(H*0.30, R.f(9,20));
+    if(!noPodium) push(b.x,b.z,b.w,b.d, base, hp);
+    const slab = R.bool(0.26);
+    const yaw  = (!noPodium && R.bool(0.20)) ? Math.PI/4 : 0;
+    const k = yaw ? 0.66 : 1.0;                       // a turned shaft must fit the plot
+    let tw = b.w*(slab ? R.f(0.34,0.48) : R.f(0.58,0.78))*k;
+    let td = b.d*(slab ? R.f(0.72,0.95) : R.f(0.58,0.78))*k;
+    const ox = yaw ? 0 : R.f(-1,1)*(b.w-tw)*0.22;
+    const oz = yaw ? 0 : R.f(-1,1)*(b.d-td)*0.22;
+    const steps = slab ? R.i(1,2) : R.i(2,4);
     let y=hp;
     for(let s=0;s<steps;s++){
       const y2 = hp + (top-hp)*((s+1)/steps);
-      push(b.x+ox,b.z+oz,tw,td,y,y2);
-      y=y2; tw*=R.f(0.74,0.88); td*=R.f(0.74,0.88);
+      push(b.x+ox,b.z+oz,tw,td,y,y2,yaw);
+      y=y2; tw*=R.f(0.78,0.90); td*=R.f(0.78,0.90);
     }
     if(b.landmark){
       // rotated crown block + tapered cap
-      push(b.x+ox,b.z+oz,tw*1.06,td*1.06, top, top+R.f(4,9), Math.PI/4);
-      push(b.x+ox,b.z+oz,tw*0.5,td*0.5, top+R.f(4,9), top+R.f(10,18));
+      push(b.x+ox,b.z+oz,tw*1.06,td*1.06, top, top+R.f(4,9), yaw ? 0 : Math.PI/4);
+      push(b.x+ox,b.z+oz,tw*0.5,td*0.5, top+R.f(4,9), top+R.f(10,18), yaw);
     }
     b._topPart = parts[parts.length-1];
     return parts;
@@ -451,16 +588,14 @@ export class Buildings {
     this.group=new THREE.Group(); this.group.name='Buildings'; scene.add(this.group);
     this.matCache=new Map();
     this.emissiveMats=[];
+    this.uNight={ value:1.0 };   // shared uniform: 0 = midday, 1 = deep night
   }
 
-  // Small, fixed material set — 4 entries total, all shared by every building.
+  // Small, fixed material set — 5 entries total, all shared by every building.
   materials(){
     if(this.matCache.size) return this.matCache;
     const R=this.rand;
-    const fac=facadeTexture(R);
-    const body=facadeMaterial(fac.map, fac.emap, {
-      key:'facade-body-v2', roofCol:'vec3(0.34,0.32,0.29)', rough:0.72,
-      uvFn:`
+    const TILE_UV = `
         const float TILE = ${TILE.toFixed(1)};
         vec2 tileUv(vec2 uvIn, vec3 nrm, mat4 im){
           vec3 sc = vec3(length(im[0].xyz), length(im[1].xyz), length(im[2].xyz));
@@ -469,11 +604,21 @@ export class Buildings {
           else if(abs(nrm.y) > 0.5) dim = vec2(sc.x, sc.z);
           else                      dim = vec2(sc.x, sc.y);
           return uvIn * max(floor(dim / TILE), vec2(1.0));
-        }`,
+        }`;
+    const fac=facadeTexture(R);
+    const body=facadeMaterial(fac.map, fac.emap, {
+      key:'facade-body-v4', roofCol:'vec3(1.0,0.98,0.95)', rough:0.72,
+      uvFn:TILE_UV, uNight:this.uNight,
     });
+    const cur=curtainTexture(R);
+    const glass=facadeMaterial(cur.map, cur.emap, {
+      key:'facade-curtain-v4', roofCol:'vec3(0.94,0.95,0.98)', rough:0.46,
+      uvFn:TILE_UV, uNight:this.uNight,
+    });
+    glass.metalness=0.16;
     const shop=shopTexture(R);
     const ground=facadeMaterial(shop.map, shop.emap, {
-      key:'facade-shop-v2', roofCol:'vec3(0.40,0.38,0.35)', rough:0.66,
+      key:'facade-shop-v4', roofCol:'vec3(1.0,0.98,0.95)', rough:0.66, uNight:this.uNight,
       uvFn:`
         const float BAY = ${BAY.toFixed(1)};
         vec2 tileUv(vec2 uvIn, vec3 nrm, mat4 im){
@@ -483,11 +628,12 @@ export class Buildings {
         }`,
     });
     const grunge=grungeTexture(R);
-    const trim=tintedMaterial({ map:grunge, roughness:0.88, metalness:0.0 });
-    const fabric=tintedMaterial({ map:grunge, roughness:0.94, metalness:0.0 });
-    this.matCache.set('body',body); this.matCache.set('ground',ground);
+    const trim=tintedMaterial({ map:grunge, roughness:0.88, metalness:0.0 }, this.uNight);
+    const fabric=tintedMaterial({ map:grunge, roughness:0.94, metalness:0.0 }, this.uNight);
+    this.matCache.set('body',body); this.matCache.set('glass',glass);
+    this.matCache.set('ground',ground);
     this.matCache.set('trim',trim); this.matCache.set('fabric',fabric);
-    this.emissiveMats=[body,ground];
+    this.emissiveMats=[body,glass,ground];
     return this.matCache;
   }
 
@@ -497,6 +643,7 @@ export class Buildings {
     const box=new THREE.BoxGeometry(1,1,1);
 
     const bBody = new Bucket(box, M.get('body'));
+    const bGlass = new Bucket(box, M.get('glass'));
     const bGround = new Bucket(box, M.get('ground'));
     const bTrim = new Bucket(box, M.get('trim'));
     const bFab  = new Bucket(box, M.get('fabric'));
@@ -508,10 +655,14 @@ export class Buildings {
       // --- per-building albedo tint: palette colour, small jitter, weathering
       col.setHex(b.colour);
       const jit = b.tint ?? 1.0;
-      col.offsetHSL((R.f(-0.02,0.02)), R.f(-0.06,0.06), 0);
-      col.multiplyScalar(jit * (1.0 - 0.14*(b.grime ?? 0.5)));
+      col.offsetHSL(R.f(-0.025,0.025), R.f(-0.03,0.12), R.f(-0.05,0.03));
+      col.multiplyScalar(jit * (1.0 - 0.10*(b.grime ?? 0.5)));
       const tint=col.clone();
       const trimTint=col.clone().multiplyScalar(0.62).lerp(new THREE.Color(0x6a6155), 0.55);
+      // roofs: tar, gravel, terracotta, white membrane, slate — read from the air
+      const ROOFS=[0x35343a,0x6d675c,0x9e5238,0xb9b2a4,0x4a5158,0x585349,0x8a8172];
+      const roofCol=new THREE.Color(ROOFS[R.i(0,ROOFS.length-1)])
+        .multiplyScalar(R.f(0.85,1.15)).lerp(col, 0.18);
 
       // --- per-building window brightness: a third of the city stays dim
       const lit = R.bool(0.28) ? R.f(0.06,0.25) : R.f(0.55,1.25);
@@ -523,15 +674,18 @@ export class Buildings {
       const retail = b.district!=='industrial' || R.bool(0.35);
       const gOut = retail ? 0.35 : 0.0;   // shopfront plinth pushes to the pavement
       bGround.add(b.x, gh/2, b.z, b.w+gOut*2, gh, b.d+gOut*2, tint, 0,
-                  retail ? Math.max(lit,0.75) : lit*0.5, R.i(0,3)/4, 0);
+                  retail ? Math.max(lit,0.75) : lit*0.5, R.i(0,3)/4, 0, roofCol);
 
       // canopy / cornice line separating retail from the body above
       bTrim.add(b.x, gh+0.16, b.z, b.w+1.25, 0.32, b.d+1.25, trimTint, 0, 0);
 
       // --- massing ----------------------------------------------------------
       const parts = massing(b, R, gh);
+      // downtown towers get the curtain-wall language, everything else stucco
+      const curtain = (b.district==='downtown' && b.h>26) || (b.h>44 && R.bool(0.6));
+      const bMass = curtain ? bGlass : bBody;
       for(const p of parts){
-        bBody.add(p.x, p.y+p.h/2, p.z, p.w, p.h, p.d, tint, p.rot, lit, uo, vo);
+        bMass.add(p.x, p.y+p.h/2, p.z, p.w, p.h, p.d, tint, p.rot, lit, uo, vo, roofCol);
       }
       b.parts = parts;
 
@@ -557,12 +711,12 @@ export class Buildings {
       }
 
       // --- balconies on residential / beach ---------------------------------
-      if((b.district==='residential'||b.district==='beach') && b.h>10 && R.bool(0.7)){
+      if((b.district==='residential'||b.district==='beach') && b.h>10 && R.bool(0.55)){
         const p=parts[0];
         if(p){
           const zs = R.bool()?1:-1;
           const bw = p.w*R.f(0.5,0.8);
-          for(let y=gh+3.4; y<p.y+p.h-1.6; y+=3.4){
+          for(let y=gh+3.4; y<p.y+p.h-1.6; y+=4.5){
             if(R.bool(0.22)) continue;
             bTrim.add(p.x, y, p.z+zs*(p.d/2+0.55), bw, 0.16, 1.1, trimTint, 0, 0);
             bTrim.add(p.x, y+0.48, p.z+zs*(p.d/2+1.05), bw, 0.9, 0.10,
@@ -575,10 +729,11 @@ export class Buildings {
       this.roofFor(b, parts, bTrim, trimTint, R);
     }
 
-    bBody.finish(this.group);
-    bGround.finish(this.group);
-    bTrim.finish(this.group);
-    bFab.finish(this.group);
+    bBody.finish(this.group, true);
+    bGlass.finish(this.group, true);
+    bGround.finish(this.group, false);
+    bTrim.finish(this.group, false);
+    bFab.finish(this.group, false);
 
     this.hookSun();
     return this;
@@ -588,8 +743,8 @@ export class Buildings {
     // parapet around each setback level + plant/AC clutter on the top
     for(let i=0;i<parts.length;i++){
       const p=parts[i];
-      if(p.w<4 || p.d<4) continue;
-      if(i>0 && R.bool(0.5)) continue;         // not every level
+      if(p.w<6 || p.d<6 || b.h<11) continue;
+      if(i>0 && i<parts.length-1) continue;    // only the base and the top level
       const ph=R.f(0.7,1.5), t=0.36, ty=p.y+p.h+ph/2;
       bucket.add(p.x, ty, p.z-p.d/2, p.w, ph, t, tint, p.rot, 0);
       bucket.add(p.x, ty, p.z+p.d/2, p.w, ph, t, tint, p.rot, 0);
@@ -599,7 +754,7 @@ export class Buildings {
     const top=b._topPart || parts[parts.length-1];
     if(!top) return;
     const ty=top.y+top.h;
-    const n = b.h>30 ? R.i(2,4) : R.i(1,2);
+    const n = b.h>30 ? R.i(1,3) : R.i(0,1);
     for(let i=0;i<n;i++){
       const w=R.f(1.4,3.4), d=R.f(1.4,3.4), h=R.f(0.9,2.6);
       bucket.add(top.x+R.f(-0.32,0.32)*top.w, ty+h/2, top.z+R.f(-0.32,0.32)*top.d,
@@ -611,7 +766,7 @@ export class Buildings {
       bucket.add(top.x, ty+h*0.55, top.z, 1.4, 0.2, 0.2, tint, 0, 0);
     }
     // water tank / stair head
-    if(R.bool(0.3) && top.w>6){
+    if(R.bool(0.22) && top.w>8){
       const w=R.f(2.0,3.2);
       bucket.add(top.x+R.f(-0.2,0.2)*top.w, ty+1.5, top.z+R.f(-0.2,0.2)*top.d, w, 3.0, w,
                  tint.clone().multiplyScalar(0.9), 0, 0);
@@ -624,17 +779,19 @@ export class Buildings {
     let sun=null;
     this.scene.traverse(o=>{ if(!sun && o.isDirectionalLight) sun=o; });
     if(!sun) return;
-    const first=this.group.children[0];
-    if(!first) return;
     const mats=this.emissiveMats;
+    const uN=this.uNight;
     const v=new THREE.Vector3();
-    first.onBeforeRender = ()=>{
+    const tick=()=>{
       v.copy(sun.position).sub(sun.target.position);
       const elev = v.lengthSq()>1e-6 ? v.y/v.length() : 0;
       const t = THREE.MathUtils.clamp((elev+0.12)/0.30, 0, 1);
       const night = 1.0 - (t*t*(3.0-2.0*t));
+      uN.value = night;
       const e = 0.05 + 1.30*Math.pow(night,0.75);
       for(const m of mats) m.emissiveIntensity = e;
     };
+    for(const c of this.group.children) c.onBeforeRender = tick;
+    tick();
   }
 }
