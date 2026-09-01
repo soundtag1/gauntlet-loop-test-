@@ -5,13 +5,17 @@ import { CONFIG } from '../core/config.js';
 // City = grid of blocks separated by roads. Districts vary height/palette so the
 // skyline is never a uniform box field (rubric §4).
 const DISTRICTS = {
-  downtown:  { hMin:26, hMax:88, density:0.92, palette:[0x8d94a8,0x6f7788,0xa9b0bd,0x5d6472], neon:0.55 },
-  strip:     { hMin:8,  hMax:22, density:0.85, palette:[0xf2e6d8,0xe8c9a8,0xd97f6a,0xf0d2b0], neon:1.00 },
-  residential:{hMin:6,  hMax:16, density:0.72, palette:[0xf4ddc4,0xe3b894,0xd8c2a8,0xefe0cc], neon:0.18 },
-  industrial:{ hMin:5,  hMax:14, density:0.66, palette:[0x9a8f80,0x7d7466,0xa8a091,0x6d675c], neon:0.25 },
-  beach:     { hMin:10, hMax:30, density:0.55, palette:[0xffffff,0xfdf2e2,0xf7e0c8,0xffeed8], neon:0.62 },
+  downtown:  { hMin:30, hMax:96, density:0.90, neon:0.55,
+               palette:[0xb9c2d0,0x9aa6b8,0xd7dce4,0x8892a4,0xc9c2b4,0xe2ddd2] },
+  strip:     { hMin:8,  hMax:24, density:0.86, neon:1.00,
+               palette:[0xf2e6d8,0xe8c9a8,0xd97f6a,0xf0d2b0,0xe9b98c,0xf6efe2] },
+  residential:{hMin:7,  hMax:18, density:0.74, neon:0.18,
+               palette:[0xf4ddc4,0xe3b894,0xd8c2a8,0xefe0cc,0xdca88a,0xf7ecdc] },
+  industrial:{ hMin:6,  hMax:15, density:0.68, neon:0.25,
+               palette:[0xbdb3a2,0xa2988a,0xc8c1b2,0x9b917f,0xd0c4ae,0xb0a08c] },
+  beach:     { hMin:11, hMax:34, density:0.56, neon:0.62,
+               palette:[0xffffff,0xfdf2e2,0xf7e0c8,0xffeed8,0xf3e4ce,0xfff8ec] },
 };
-
 export function districtAt(bx, bz, n){
   const cx=(bx-n/2)/n*2, cz=(bz-n/2)/n*2;      // -1..1
   const r = Math.hypot(cx, cz);
@@ -99,27 +103,59 @@ export class City {
 
   buildBlocks(){
     const R=this.rand;
+    const mid=(this.n-1)/2;
     for(let bx=0;bx<this.n;bx++) for(let bz=0;bz<this.n;bz++){
       const dName=districtAt(bx,bz,this.n);
       const D=DISTRICTS[dName];
       const c=this.blockCentre(bx,bz);
       if(dName==='beach' && R.bool(0.45)) continue; // open sand
-      this.buildLots(c, D, dName, R);
+      // distance from city core, 0 at centre -> 1 at edge. Drives landmark odds.
+      const core = Math.hypot(bx-mid, bz-mid)/mid;
+      this.buildLots(c, D, dName, R, core);
     }
   }
 
-  // Subdivide a block into lots and place a building per lot.
-  buildLots(centre, D, dName, R){
+  // Subdivide a block into lots and place a building per lot. Lot COUNT varies so
+  // footprints are not a uniform grid: occasionally one building takes the whole
+  // block (a landmark plate), usually 2x2..3x3 with jittered splits.
+  buildLots(centre, D, dName, R, core){
     const bs=this.bs;
-    const cols=R.i(2,3), rows=R.i(2,3);
-    const lw=bs/cols, ld=bs/rows;
+    const big = (dName==='downtown' && R.bool(0.22)) || (dName!=='downtown' && R.bool(0.06));
+    let cols, rows;
+    if(big){ cols=1; rows=1; }
+    else { cols=R.i(2,3); rows=R.i(2,3); }
+
+    // jittered split lines so lots differ in size within the block
+    const splits=(k)=>{
+      const cut=[0]; for(let i=1;i<k;i++) cut.push(i/k + R.f(-0.10,0.10));
+      cut.push(1); return cut;
+    };
+    const cx0=splits(cols), cz0=splits(rows);
+
     for(let i=0;i<cols;i++) for(let j=0;j<rows;j++){
       if(!R.bool(D.density)) continue;
-      const cx=centre.x - bs/2 + lw*(i+0.5);
-      const cz=centre.z - bs/2 + ld*(j+0.5);
-      const w=lw*R.f(0.78,0.94), d=ld*R.f(0.78,0.94);
-      const h=R.f(D.hMin, D.hMax) * (dName==='downtown' ? R.f(0.7,1.35) : 1.0);
-      this.buildings.push({ x:cx, z:cz, w, d, h, district:dName, colour:R.pick(D.palette), neon:D.neon, seed:R.i(0,1e6) });
+      const u0=cx0[i], u1=cx0[i+1], v0=cz0[j], v1=cz0[j+1];
+      const lw=(u1-u0)*bs, ld=(v1-v0)*bs;
+      const cx=centre.x - bs/2 + (u0+u1)*0.5*bs;
+      const cz=centre.z - bs/2 + (v0+v1)*0.5*bs;
+      const w=lw*R.f(0.80,0.95), d=ld*R.f(0.80,0.95);
+
+      // Height: skewed low so a few towers really stand out (rubric S4).
+      const u=R.f(0,1);
+      let h = D.hMin + (D.hMax-D.hMin)*Math.pow(u, dName==='downtown'?1.5:1.9);
+      // landmark: rare, tall, and only where the lot can carry it
+      const lmChance = dName==='downtown' ? 0.16*(1.0-core*0.7) : 0.02;
+      const landmark = Math.min(w,d) > 16 && R.bool(Math.max(lmChance,0));
+      if(landmark) h *= R.f(1.45, 2.15);
+      if(dName==='downtown') h = Math.max(h, 18);
+
+      this.buildings.push({
+        x:cx, z:cz, w, d, h,
+        district:dName, colour:R.pick(D.palette), neon:D.neon, seed:R.i(0,1e6),
+        landmark,                       // used by Buildings for massing + crowns
+        tint:R.f(0.90,1.10),            // per-building albedo variation
+        grime:R.f(0.0,1.0),             // per-building weathering amount
+      });
     }
   }
 }
