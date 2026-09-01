@@ -10,9 +10,9 @@ import { Rand } from '../core/rng.js';
 // analytic in the fragment shader so the geometry stays tiny.
 // ---------------------------------------------------------------------------
 
-const CITY_EDGE   = 545;    // half-extent of the last road + kerb, sand starts here
-const SHORE_BASE  = 632;    // half-extent of the mean waterline
-const SHORE_BEACH = 118;    // extra shore push on the +Z (beach district) side
+const CITY_EDGE   = 539;    // half-extent of the last road + kerb, sand starts here
+const SHORE_BASE  = 604;    // half-extent of the mean waterline
+const SHORE_BEACH = 74;    // extra shore push on the +Z (beach district) side
 const OCEAN_OUT   = 3400;   // ocean outer radius — far past the fog horizon
 const SEA_Y       = 0.0;    // sea level (city ground plane is at -0.05)
 
@@ -23,9 +23,10 @@ function shoreHalf(theta){
   const s = Math.sin(theta), c = Math.cos(theta);
   const facingZ = Math.max(0.0, s);
   let S = SHORE_BASE + SHORE_BEACH * facingZ * facingZ;
-  S += 26.0 * Math.sin(theta * 3.0 + 0.7)
-     + 14.0 * Math.sin(theta * 7.0 - 1.9)
-     +  7.0 * Math.sin(theta * 13.0 + 2.6);
+  S += 18.0 * Math.sin(theta * 3.0 + 0.7)
+     + 11.0 * Math.sin(theta * 7.0 - 1.9)
+     +  6.0 * Math.sin(theta * 13.0 + 2.6)
+     +  3.2 * Math.sin(theta * 29.0 - 0.4);
   return S;
 }
 function squareR(theta, half){
@@ -33,6 +34,16 @@ function squareR(theta, half){
   return half / Math.max(c, s);
 }
 function shoreR(theta){ return squareR(theta, shoreHalf(theta)); }
+
+// Beach height as a function of distance inland from the nominal shore line.
+// Starts under water (-0.55), breaks the surface ~18u in, crests, then eases
+// back to the city ground level so there is no step at the inland edge.
+function sandProfile(d, theta){
+  const inner = squareR(theta, CITY_EDGE), outer = shoreR(theta);
+  const u = Math.min(Math.max(d / Math.max(outer - inner, 1), 0), 1);
+  const t = 1 - 0.55 * THREE.MathUtils.smoothstep(u, 0.45, 1.0);
+  return -0.55 + Math.min(d * 0.030, 1.25) * t;
+}
 
 // Ring mesh between two radius functions. `power` biases the radial rings
 // towards the inner (shore) edge where detail matters.
@@ -84,9 +95,10 @@ void main(){
   vec3 p = position;
   // gentle swell on the geometry itself; goes to zero at the waterline so the
   // ocean never lifts off the wet sand.
-  float ramp = smoothstep(0.0, 90.0, aShore);
-  p.y += ramp * (sin(p.x*0.0125 + uTime*0.62) * 0.34
-               + sin(p.z*0.0171 - uTime*0.47) * 0.26);
+  float ramp = smoothstep(0.0, 110.0, aShore);
+  // biased so the surface never dips under the city ground plane (y=-0.05)
+  p.y += ramp * (0.58 + sin(p.x*0.0125 + uTime*0.62) * 0.30
+                      + sin(p.z*0.0171 - uTime*0.47) * 0.22);
   vec4 wp = modelMatrix * vec4(p, 1.0);
   vWorld = wp.xyz;
   vec4 mvPosition = viewMatrix * wp;
@@ -128,10 +140,11 @@ vec3 waveNormal(vec2 p, float t, float fade){
   vec2 d4 = normalize(vec2(0.35, 0.94));
   float k4 = 0.205, a4 = 0.115;
   g += fade * d4 * (a4 * k4 * cos(dot(d4, p) * k4 - t * 3.3));
-  // fine ripple, drives the glitter sparkle
-  g += fade * vec2(
-      0.055 * cos(p.x * 0.62 + t * 3.9 + vnoise(p * 0.06) * 6.28),
-      0.055 * cos(p.y * 0.58 - t * 4.3 + vnoise(p * 0.05) * 6.28));
+  // fine ripple, drives the glitter sparkle (rotated dirs, never axis-aligned)
+  vec2 d5 = normalize(vec2(0.62, 0.79));
+  g += fade * d5 * (0.050 * cos(dot(d5, p) * 0.66 + t * 3.9 + vnoise(p * 0.05) * 6.28));
+  vec2 d6 = normalize(vec2(-0.74, 0.67));
+  g += fade * d6 * (0.044 * cos(dot(d6, p) * 0.83 - t * 4.6 + vnoise(p * 0.07) * 6.28));
   return normalize(vec3(-g.x, 1.0, -g.y));
 }
 
@@ -140,7 +153,7 @@ void main(){
   float dist = length(V);
   V /= dist;
 
-  float fade = exp(-dist * 0.0042);              // kill high freq in the distance
+  float fade = exp(-dist * 0.0016);              // kill high freq in the distance
   vec3 N = waveNormal(vWorld.xz, uTime, fade);
   N = normalize(mix(vec3(0.0,1.0,0.0), N, 0.25 + 0.75 * fade));
 
@@ -153,12 +166,15 @@ void main(){
   skyC += uSpecCol * (pow(sd, 6.0) * 0.30 + pow(sd, 40.0) * 0.55) * uSpecGain;
 
   // --- body colour --------------------------------------------------------
-  float depthF = smoothstep(0.0, 210.0, vShore);
+  float depthF = smoothstep(0.0, 260.0, vShore);
   vec3 body = mix(uShallow, uDeep, depthF);
+  // translucent shallows: light punches through the back of the small waves
+  body += uShallow * (1.0 - depthF) * max(0.0, N.z * 0.5 + 0.5) * 0.35;
 
-  // fresnel
+  // fresnel — damped in the shallows so the water keeps its teal there
   float f = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);
   f = clamp(0.026 + 0.974 * f, 0.0, 1.0);
+  f *= mix(0.46, 1.0, smoothstep(0.0, 340.0, vShore));
   vec3 col = mix(body, skyC, f);
 
   // --- specular glitter track --------------------------------------------
@@ -168,32 +184,36 @@ void main(){
   float broad = pow(ndh, 26.0);
   // sparkle: break the sharp lobe up with high-frequency noise so it reads as
   // thousands of individual glints rather than a smooth blob
-  float sp = vnoise(vWorld.xz * 0.55 + uTime * 0.35)
-           * vnoise(vWorld.xz * 1.9 - uTime * 0.21);
-  float glint = sharp * (0.35 + 2.4 * sp * fade);
-  col += uSpecCol * uSpecGain * (glint * 2.6 + broad * 0.16);
+  float sp = vnoise(vWorld.xz * 0.30 + uTime * 0.26)
+           * vnoise(vWorld.xz * 1.15 - uTime * 0.17)
+           * (0.55 + 0.85 * vnoise(vWorld.xz * 3.7 + uTime * 0.9));
+  sp = pow(clamp(sp * 3.4, 0.0, 1.0), 1.35);
+  float glint = sharp * (0.18 + 4.2 * sp * fade);
+  col += uSpecCol * uSpecGain * (glint * 3.0 + broad * 0.22);
 
   // --- shoreline foam -----------------------------------------------------
-  float swash = 5.0 * sin(uTime * 0.55 + vWorld.x * 0.012)
-              + 3.0 * sin(uTime * 0.83 - vWorld.z * 0.017);
-  float e = vShore - swash;
-  float band = 1.0 - smoothstep(0.0, 26.0, e);
-  float crumble = vnoise(vWorld.xz * 0.16 + vec2(uTime * 0.25, 0.0)) * 0.55
-                + vnoise(vWorld.xz * 0.55 - vec2(0.0, uTime * 0.4)) * 0.45;
-  float foam = clamp(band * (crumble * 1.45 - 0.18), 0.0, 1.0);
-  foam += (1.0 - smoothstep(0.0, 5.0, e)) * 0.55;              // hard edge line
-  // a second breaker line further out
-  float e2 = vShore - 46.0 - swash * 1.6;
-  foam += (1.0 - smoothstep(0.0, 9.0, abs(e2))) * crumble * 0.45;
+  float swash = 6.5 * sin(uTime * 0.55 + vWorld.x * 0.010)
+              + 4.0 * sin(uTime * 0.83 - vWorld.z * 0.015);
+  float e = vShore - 12.0 - swash;      // ocean starts 12u inland of the line
+  float band = 1.0 - smoothstep(0.0, 44.0, e);
+  float crumble = vnoise(vWorld.xz * 0.11 + vec2(uTime * 0.20, 0.0)) * 0.55
+                + vnoise(vWorld.xz * 0.42 - vec2(0.0, uTime * 0.34)) * 0.45;
+  float foam = clamp(band * (crumble * 1.9 - 0.30), 0.0, 1.0);
+  foam += (1.0 - smoothstep(-4.0, 9.0, e)) * 0.95;             // wash at the edge
+  // breaker lines further out
+  float e2 = vShore - 62.0 - swash * 1.7;
+  foam += (1.0 - smoothstep(0.0, 13.0, abs(e2))) * (0.35 + crumble * 0.75);
+  float e3 = vShore - 128.0 - swash * 2.4;
+  foam += (1.0 - smoothstep(0.0, 11.0, abs(e3))) * crumble * 0.55;
   foam = clamp(foam, 0.0, 1.0);
-  vec3 foamCol = mix(uHorizon, vec3(1.0), 0.55) * (0.30 + 0.70 * uSunI);
-  foamCol = mix(foamCol, foamCol * 0.30 + uNeon * 0.25, uNight);
-  col = mix(col, foamCol, foam * 0.92);
+  vec3 foamCol = mix(uHorizon, vec3(1.0), 0.62) * (0.34 + 0.70 * uSunI);
+  foamCol = mix(foamCol, foamCol * 0.22 + uNeon * 0.10, uNight);
+  col = mix(col, foamCol, foam * 0.94);
 
-  // --- night: city neon bleeding onto the water ---------------------------
-  float cityGlow = exp(-vShore * 0.0075) * uNight;
-  float streak = 0.45 + 0.55 * vnoise(vec2(vWorld.x * 0.09, vWorld.z * 0.012 + uTime * 0.15));
-  col += uNeon * cityGlow * streak * 0.55;
+  // --- night: city neon bleeding onto the water (restrained) --------------
+  float cityGlow = exp(-vShore * 0.022) * uNight;
+  float streak = 0.30 + 0.70 * vnoise(vec2(vWorld.x * 0.22, vWorld.z * 0.020 + uTime * 0.12));
+  col += uNeon * cityGlow * streak * 0.055;
 
   gl_FragColor = vec4(col, 1.0);
   #include <fog_fragment>
@@ -231,39 +251,55 @@ float vnoise(vec2 p){
 }
 
 void main(){
-  // aShore counts *inland* from the waterline for the sand ring
-  float d = -vShore;                   // 0 at water, negative inland
-  float e = vShore;
+  float e = vShore - 18.0;              // metres inland from the waterline
 
-  float grain = vnoise(vWorld.xz * 2.3) * 0.55 + vnoise(vWorld.xz * 0.31) * 0.45;
-  float dunes = vnoise(vWorld.xz * 0.052);
+  // ---- surface texture ---------------------------------------------------
+  float grain = vnoise(vWorld.xz * 2.6) * 0.34 + vnoise(vWorld.xz * 8.0) * 0.22
+              + vnoise(vWorld.xz * 0.60) * 0.44;
+  float dunes = vnoise(vWorld.xz * 0.030) * 0.50 + vnoise(vWorld.xz * 0.105) * 0.32
+              + vnoise(vWorld.xz * 0.28) * 0.18;
+  // wind ripples running parallel to the shore
+  float ripple = sin(e * 1.35 + vnoise(vWorld.xz * 0.09) * 9.0) * 0.5 + 0.5;
+  ripple *= smoothstep(6.0, 40.0, e);
 
-  float wet = 1.0 - smoothstep(0.0, 34.0, e);
-  vec3 base = mix(uSandDry, uSandWet, wet * 0.92);
-  base *= 0.86 + 0.28 * grain;
-  base *= 0.90 + 0.20 * dunes;
+  float wet = 1.0 - smoothstep(2.0, 30.0, e);        // saturated sand
+  float damp = 1.0 - smoothstep(20.0, 76.0, e);      // last high-tide line
 
-  // lighting: warm key from the (possibly set) sun + sky ambient
+  vec3 base = mix(uSandDry, uSandWet, wet * 0.94);
+  base = mix(base, base * 0.86, damp * 0.35);
+  base *= 0.76 + 0.44 * grain;
+  base *= 0.80 + 0.38 * dunes;
+  base *= 0.90 + 0.19 * ripple;
+  // dark tide-wrack line
+  base *= 1.0 - 0.20 * (1.0 - smoothstep(0.0, 5.0, abs(e - 34.0 - dunes * 12.0)));
+
+  // ---- lighting ----------------------------------------------------------
   float ndl = max(uSpecDir.y, 0.0);
-  vec3 lit = base * (uAmb + uSunCol * ndl * uSunI * 1.15);
+  vec3 lit = base * (uAmb + uSunCol * ndl * uSunI * 1.25);
 
-  // wet sand takes a sheen of the sky/sun near grazing angles
+  // wet sand mirrors the sky at grazing angles
   vec3 V = normalize(uCamPos - vWorld);
-  float f = pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);
-  lit += uHorizon * f * wet * 0.55 * (0.25 + uSunI);
+  float f = pow(1.0 - clamp(V.y, 0.0, 1.0), 5.0);
+  lit = mix(lit, uHorizon * (0.35 + 0.75 * uSunI), f * wet * 0.55);
+  // and takes a specular streak from the sun
+  vec3 H = normalize(V + uSpecDir);
+  lit += uSunCol * pow(max(H.y, 0.0), 90.0) * wet * uSunI * 0.55;
 
-  // swash — the thin sheet of foam sliding up the sand, matched to the ocean
-  float swash = 5.0 * sin(uTime * 0.55 + vWorld.x * 0.012)
-              + 3.0 * sin(uTime * 0.83 - vWorld.z * 0.017);
+  // ---- swash: the sheet of foam sliding up the sand ----------------------
+  float swash = 6.5 * sin(uTime * 0.55 + vWorld.x * 0.010)
+              + 4.0 * sin(uTime * 0.83 - vWorld.z * 0.015);
   float ee = e - swash;
-  float sheet = 1.0 - smoothstep(0.0, 13.0, ee);
-  float crumble = vnoise(vWorld.xz * 0.30 + vec2(uTime * 0.22, 0.0));
-  float foam = clamp(sheet * (0.55 + crumble * 0.9) - 0.12, 0.0, 1.0);
-  vec3 foamCol = mix(uHorizon, vec3(1.0), 0.55) * (0.30 + 0.70 * uSunI);
-  foamCol = mix(foamCol, foamCol * 0.30 + uNeon * 0.25, uNight);
-  lit = mix(lit, foamCol, foam * 0.8);
+  float sheet = 1.0 - smoothstep(0.0, 22.0, ee);
+  float crumble = vnoise(vWorld.xz * 0.22 + vec2(uTime * 0.20, 0.0)) * 0.6
+                + vnoise(vWorld.xz * 0.7 - vec2(0.0, uTime * 0.34)) * 0.4;
+  float foam = clamp(sheet * (crumble * 1.9 - 0.35), 0.0, 1.0);
+  foam += (1.0 - smoothstep(-6.0, 7.0, ee)) * 0.85;
+  foam = clamp(foam, 0.0, 1.0);
+  vec3 foamCol = mix(uHorizon, vec3(1.0), 0.62) * (0.34 + 0.70 * uSunI);
+  foamCol = mix(foamCol, foamCol * 0.22 + uNeon * 0.10, uNight);
+  lit = mix(lit, foamCol, foam * 0.9);
 
-  lit += uNeon * uNight * exp(-max(-d, 0.0) * 0.02) * 0.05;
+  lit += uNeon * uNight * 0.02;
 
   gl_FragColor = vec4(lit, 1.0);
   #include <fog_fragment>
@@ -286,8 +322,8 @@ export class Water {
 
     // ---- ocean ring -----------------------------------------------------
     const oceanGeo = ringGeometry(
-      144, 9,
-      (th) => shoreR(th),
+      160, 10,
+      (th) => shoreR(th) - 30,
       () => OCEAN_OUT,
       2.3, null
     );
@@ -329,16 +365,8 @@ export class Water {
       144, 7,
       (th) => shoreR(th),
       (th) => squareR(th, CITY_EDGE) * 0.999,   // note: runs *inland*
-      1.55,
-      (d, r, th) => {
-        // Beach slopes up out of the water, crests, then settles back level
-        // with the city ground so there is no step at the inland edge.
-        const inner = squareR(th, CITY_EDGE), outer = shoreR(th);
-        const u = Math.min(d / Math.max(outer - inner, 1), 1);
-        const rise = Math.pow(Math.min(u / 0.30, 1), 0.7);
-        const taper = 1 - 0.90 * THREE.MathUtils.smoothstep(u, 0.55, 1.0);
-        return -0.12 + 0.95 * rise * taper;
-      }
+      1.35,
+      (d, r, th) => sandProfile(d, th)
     );
     this.sandUniforms = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
@@ -385,11 +413,7 @@ export class Water {
     const inner = squareR(th, CITY_EDGE), outer = shoreR(th);
     if (r >= outer) return SEA_Y;
     if (r <= inner) return 0;
-    const d = outer - r;
-    const u = Math.min(d / Math.max(outer - inner, 1), 1);
-    const rise = Math.pow(Math.min(u / 0.30, 1), 0.7);
-    const taper = 1 - 0.90 * THREE.MathUtils.smoothstep(u, 0.55, 1.0);
-    return -0.12 + 0.95 * rise * taper;
+    return Math.max(sandProfile(outer - r, th), SEA_Y);
   }
 
   update(dt, ctx){
@@ -420,11 +444,11 @@ export class Water {
 
     // --- specular source: the sun, lifted just above the horizon so the
     // glitter track survives after sunset; swaps to a cool moon at night.
-    const dayW = THREE.MathUtils.clamp((sd.y + 0.30) / 0.36, 0, 1);
+    const dayW = THREE.MathUtils.clamp((sunI - 0.13) / 0.30, 0, 1);
     const sx = sd.x, sz = sd.z;
     const inv = 1 / Math.max(Math.hypot(sx, sz), 1e-4);
     // sun-ish direction with a floor on elevation
-    const sunElev = Math.max(sd.y, 0.030);
+    const sunElev = Math.max(sd.y, 0.055);
     this._spec.set(sx * inv, 0, sz * inv);
     // moon sits opposite the sun, higher up
     const mx = -sx * inv, mz = -sz * inv;
@@ -453,8 +477,9 @@ export class Water {
     ou.uShallow.value.copy(shal);
 
     // sand ambient: lit by the sky, never neutral grey
-    const amb = this._c1.copy(zen).multiplyScalar(0.55).lerp(this._c2.copy(hor).multiplyScalar(0.55), 0.55);
-    amb.multiplyScalar(0.45 + 0.85 * sunI);
+    const ndl = ou.uSpecDir.value.y;
+    const amb = this._c1.copy(zen).multiplyScalar(0.55).lerp(this._c2.copy(hor).multiplyScalar(0.62), 0.72);
+    amb.multiplyScalar((0.45 + 0.85 * sunI) * (1.0 + 0.95 * (1.0 - Math.min(ndl, 1))));
     su.uAmb.value.copy(amb);
     su.uSunCol.value.copy(keys ? keys.sun : hor);
     // sand goes cool/dark at night, warm and bleached by day

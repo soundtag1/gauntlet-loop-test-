@@ -77,11 +77,11 @@ function buildPalmGeometry(rand){
   const up = new THREE.Vector3(0, 1, 0);
   for (let k = 0; k < NF; k++){
     const az = (k / NF) * TAU + rand.f(-0.16, 0.16);
-    const L = rand.f(4.3, 5.6);
+    const L = rand.f(4.5, 5.9);
     const droop = rand.f(1.35, 1.85);
     const lift = rand.f(0.55, 0.95);
     const roll = rand.f(-0.45, 0.45);
-    const W = rand.f(0.62, 0.86);
+    const W = rand.f(0.82, 1.12);
     const tint = rand.f(-0.10, 0.12);
     const ca = Math.cos(az), sa = Math.sin(az);
     const start = pos.length / 3;
@@ -105,8 +105,8 @@ function buildPalmGeometry(rand){
       const serr = 0.52 + 0.48 * Math.abs(Math.sin(s * Math.PI * 4.0));
       const w = W * (0.30 + 0.85 * Math.sin(Math.pow(s, 0.7) * Math.PI)) * taperTip * serr + 0.045;
 
-      const g = 0.32 + 0.30 * s + tint;
-      c.setRGB(0.20 * g * 1.35, 0.52 * g, 0.24 * g * 1.1);
+      const g = 0.40 + 0.34 * s + tint;
+      c.setRGB(0.34 * g * 1.30, 0.86 * g, 0.38 * g * 1.05);
       const sw = 0.42 + 1.15 * Math.pow(s, 1.25);
 
       pos.push(px - side.x * w, py - side.y * w, pz - side.z * w);
@@ -143,7 +143,7 @@ function buildShrubGeometry(){
     const n = 0.78 + 0.35 * Math.abs(Math.sin(x * 5.1 + z * 3.3 + y * 2.2));
     p.setXYZ(i, x * n, Math.max(y, -0.15) * 0.62 * n + 0.42, z * n);
     const up = (y + 1) * 0.5;
-    c.setRGB(0.16 + 0.16 * up, 0.34 + 0.26 * up, 0.17 + 0.12 * up);
+    c.setRGB(0.20 + 0.22 * up, 0.42 + 0.34 * up, 0.20 + 0.16 * up);
     col.push(c.r, c.g, c.b);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -252,6 +252,16 @@ export class Vegetation {
         transformed.z += (cos(t1 * 0.83 + 0.7) * 0.42 + sin(t1 * 3.1 + ph) * 0.18 * flut) * w;
         transformed.y -= abs(sin(t1)) * 0.10 * w;
       `);
+      // Foliage is two-sided: force every normal to point skyward so the
+      // undersides of fronds are not shaded black.
+      sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', `
+        #include <normal_fragment_begin>
+        {
+          vec3 vUpF = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          if (dot(normal, vUpF) < 0.0) normal = -normal;
+          normal = normalize(mix(normal, vUpF, 0.30));
+        }
+      `);
     };
     m.customProgramCacheKey = () => 'veg-sway-' + swayAmp;
     return m;
@@ -309,24 +319,31 @@ export class Vegetation {
     const shoreR = (water && water.shoreRadiusAt) ? water.shoreRadiusAt : null;
     const cityEdge = (water && water.cityEdge) || 545;
 
-    // (a) beach front — dense along the +Z ocean side, thinning round the island
-    for (let i = 0; i < 900 && palms.length < 150; i++){
-      const th = rand.f(0, TAU);
+    // (a) beach front — a promenade row of palms following the shoreline,
+    // dense along the +Z beach district, thinning round the rest of the island
+    const shoreAt = (th) => (shoreR ? shoreR(th) : (cityEdge + 90) /
+      Math.max(Math.abs(Math.cos(th)), Math.abs(Math.sin(th))));
+    for (let th = 0; th < TAU; th += 0.042){
       const facingZ = Math.max(0, Math.sin(th));
-      // strongly favour the beach district side
-      if (rand.f(0, 1) > 0.12 + 0.88 * facingZ * facingZ) continue;
-      const inner = cityEdge / Math.max(Math.abs(Math.cos(th)), Math.abs(Math.sin(th)));
-      const outer = shoreR ? shoreR(th) : inner + 90;
-      if (outer - inner < 30) continue;
-      const r = inner - rand.f(-6, 26) + (outer - inner) * Math.pow(rand.f(0, 1), 1.7) * 0.62;
-      const x = Math.cos(th) * r, z = Math.sin(th) * r;
-      if (city.isRoad(x, z) || this.blocked(x, z, 2.0)) continue;
-      palms.push({ x, z, sc: rand.f(0.85, 1.5), lean: rand.f(0.05, 0.30) });
+      const dens = 0.10 + 0.90 * facingZ * facingZ;
+      if (!rand.bool(dens)) continue;
+      const R0 = shoreAt(th + rand.f(-0.012, 0.012));
+      // front row on the dry sand, plus an occasional second row behind it
+      const rows = rand.bool(0.34) ? 2 : 1;
+      for (let k = 0; k < rows; k++){
+        const back = k === 1 ? rand.f(34, 62) : 0;
+        const r = R0 - rand.f(26, 48) - back;
+        const inner = cityEdge / Math.max(Math.abs(Math.cos(th)), Math.abs(Math.sin(th)));
+        if (r < inner + 4) continue;
+        const x = Math.cos(th) * r, z = Math.sin(th) * r;
+        if (city.isRoad(x, z) || this.blocked(x, z, 2.0)) continue;
+        palms.push({ x, z, sc: rand.f(0.9, 1.55), lean: rand.f(0.06, 0.34) });
+      }
     }
 
     // (b) boulevard rows — palms marching down the sidewalk verges
-    const PALM_CAP = 400;
-    const boulevards = [3, 7, 11];
+    const PALM_CAP = 420;
+    const boulevards = [2, 4, 7, 10, 12];
     for (const bi of boulevards){
       const off = -half + bi * s;
       for (const sgn of [-1, 1]){
@@ -334,11 +351,11 @@ export class Vegetation {
           if (palms.length >= PALM_CAP) break;
           const lat = off + sgn * rand.f(9.2, 10.4);
           // north-south boulevard
-          if (rand.bool(0.62) && !city.isRoad(lat, d) && !this.blocked(lat, d, 1.5))
+          if (rand.bool(0.80) && !city.isRoad(lat, d) && !this.blocked(lat, d, 1.5))
             palms.push({ x: lat, z: d, sc: rand.f(0.9, 1.25), lean: rand.f(0.02, 0.14) });
           // east-west boulevard
           const lat2 = off + sgn * rand.f(9.2, 10.4);
-          if (rand.bool(0.62) && !city.isRoad(d, lat2) && !this.blocked(d, lat2, 1.5))
+          if (rand.bool(0.80) && !city.isRoad(d, lat2) && !this.blocked(d, lat2, 1.5))
             palms.push({ x: d, z: lat2, sc: rand.f(0.9, 1.25), lean: rand.f(0.02, 0.14) });
         }
       }
