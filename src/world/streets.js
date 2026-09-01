@@ -69,13 +69,13 @@ function crack(g, R, x, y, len, step, w, col){
 
 // Paints tarmac into the albedo ctx `g` and matching wear into roughness ctx `rg`.
 function tarmac(g, rg, W, H, R, pxPerM){
-  g.fillStyle = '#2c2b31'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#37363f'; g.fillRect(0, 0, W, H);
   rg.fillStyle = '#d2d2d2'; rg.fillRect(0, 0, W, H);   // rough by default
 
   // large-scale aggregate blotching
-  blotches(g, W, H, R, 260, 3, 16, (r)=>`rgba(${(48+r.f(-16,22))|0},${(46+r.f(-16,22))|0},${(52+r.f(-16,24))|0},${r.f(0.10,0.30).toFixed(3)})`);
+  blotches(g, W, H, R, 320, 3, 18, (r)=>`rgba(${(64+r.f(-30,34))|0},${(61+r.f(-30,34))|0},${(70+r.f(-30,36))|0},${r.f(0.12,0.40).toFixed(3)})`);
   blotches(rg, W, H, R, 160, 4, 22, (r)=>`rgba(255,255,255,${r.f(0.03,0.10).toFixed(3)})`);
-  grain(g, W, H, R, 26, 1.0, 0.96, 1.06);
+  grain(g, W, H, R, 34, 1.0, 0.96, 1.08);
   grain(rg, W, H, R, 16, 1, 1, 1);
 
   // resurfacing patches — rectangular, slightly different tone + hard seam
@@ -83,8 +83,8 @@ function tarmac(g, rg, W, H, R, pxPerM){
   for(let i = 0; i < patches; i++){
     const pw = R.f(1.4, 5.0) * pxPerM, ph = R.f(1.6, 7.0) * pxPerM;
     const px = R.f(-pw*0.3, W), py = R.f(-ph*0.3, H);
-    const t = R.f(-14, 12);
-    g.fillStyle = `rgba(${(44+t)|0},${(43+t)|0},${(49+t)|0},0.65)`;
+    const t = R.f(-20, 26);
+    g.fillStyle = `rgba(${(58+t)|0},${(56+t)|0},${(64+t)|0},0.70)`;
     g.fillRect(px, py, pw, ph);
     g.strokeStyle = 'rgba(12,12,15,0.75)'; g.lineWidth = Math.max(1, pxPerM*0.06);
     g.strokeRect(px, py, pw, ph);
@@ -98,7 +98,7 @@ function tarmac(g, rg, W, H, R, pxPerM){
   }
   // fine hairline cracks (lighter, opened aggregate)
   for(let i = 0; i < 10; i++){
-    crack(g, R, R.f(0,W), R.f(0,H), R.i(6,16), pxPerM*0.4, Math.max(1, pxPerM*0.03), 'rgba(96,94,100,0.35)');
+    crack(g, R, R.f(0,W), R.f(0,H), R.i(6,16), pxPerM*0.4, Math.max(1, pxPerM*0.03), 'rgba(124,121,130,0.45)');
   }
 }
 
@@ -182,8 +182,8 @@ function roadTexture(R){
   paintRect(g, rg, R, mx(0.55) - lw, 0, lw*2, H, '#e6e4dc', 1.0);
   paintRect(g, rg, R, mx(CLEAR - 0.55) - lw, 0, lw*2, H, '#e6e4dc', 1.0);
   // double-solid amber centre line at 5 m
-  paintRect(g, rg, R, mx(5.0 - 0.13) - lw, 0, lw*2, H, '#e8b53c', 0.85);
-  paintRect(g, rg, R, mx(5.0 + 0.13) - lw, 0, lw*2, H, '#e8b53c', 0.85);
+  paintRect(g, rg, R, mx(5.0 - 0.26) - lw, 0, lw*2, H, '#e8b53c', 0.85);
+  paintRect(g, rg, R, mx(5.0 + 0.26) - lw, 0, lw*2, H, '#e8b53c', 0.85);
   // dashed white lane hints inside each lane half (period 8 m: 3 m paint / 5 gap)
   for(const lc of [2.5, 7.5]){
     for(let s = 0; s < TILE_LEN; s += 8){

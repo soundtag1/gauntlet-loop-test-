@@ -51,7 +51,7 @@ function ringGeometry(NA, NR, rInFn, rOutFn, power, yFn){
       const t = Math.pow(j / NR, power);
       const r = ri + (ro - ri) * t;
       const x = ct * r, z = st * r;
-      const d = r - ri;
+      const d = Math.abs(r - ri);
       pos[p++] = x; pos[p++] = yFn ? yFn(d, r, th) : 0; pos[p++] = z;
       uv[q++] = th / (Math.PI * 2) * 40.0; uv[q++] = t;
       sh[k++] = d;
@@ -68,7 +68,6 @@ function ringGeometry(NA, NR, rInFn, rOutFn, power, yFn){
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setAttribute('aShore', new THREE.BufferAttribute(sh, 1));
   g.setIndex(idx);
-  g.computeVertexNormals();
   return g;
 }
 
@@ -331,11 +330,14 @@ export class Water {
       (th) => shoreR(th),
       (th) => squareR(th, CITY_EDGE) * 0.999,   // note: runs *inland*
       1.55,
-      (d) => {
-        // beach slopes up away from the water; slightly under the sea at the
-        // waterline so the two rings never crack apart.
-        const t = Math.min(d / 60, 1);
-        return -0.10 + 0.85 * Math.pow(t, 0.75);
+      (d, r, th) => {
+        // Beach slopes up out of the water, crests, then settles back level
+        // with the city ground so there is no step at the inland edge.
+        const inner = squareR(th, CITY_EDGE), outer = shoreR(th);
+        const u = Math.min(d / Math.max(outer - inner, 1), 1);
+        const rise = Math.pow(Math.min(u / 0.30, 1), 0.7);
+        const taper = 1 - 0.90 * THREE.MathUtils.smoothstep(u, 0.55, 1.0);
+        return -0.12 + 0.95 * rise * taper;
       }
     );
     this.sandUniforms = THREE.UniformsUtils.merge([
@@ -356,7 +358,7 @@ export class Water {
     ]);
     const sandMat = new THREE.ShaderMaterial({
       vertexShader: SAND_VERT, fragmentShader: SAND_FRAG,
-      uniforms: this.sandUniforms, fog: true, side: THREE.FrontSide,
+      uniforms: this.sandUniforms, fog: true, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -3,
     });
     const sand = new THREE.Mesh(sandGeo, sandMat);

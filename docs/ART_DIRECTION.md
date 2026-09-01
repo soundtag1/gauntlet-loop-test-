@@ -50,3 +50,58 @@ Target register: sun-bleached neo-Miami crime drama. Humid, saturated, cinematic
 - Flat grey untextured boxes; uniform building heights; visible hard fog cutoff;
   clipped white blowouts; z-fighting; objects floating above ground; empty
   streets with zero motion; ambient-only lighting with no directional shadow.
+
+---
+
+# ADDENDUM — criteria derived from published visual analyses
+Sourced from technical/critical breakdowns of the reference material's look.
+These are gradeable REQUIREMENTS, not aspirations. Critics: score each.
+
+## A1. Low sun is the hero condition
+The look is at its WEAKEST with a high midday sun and at its strongest when the
+sun is low and raking. Consequence for us:
+- Dusk/dawn/golden-hour shots carry the art direction; they must be the best frames.
+- A high-sun frame must still avoid flat, shadowless lighting — keep long-ish
+  shadows, contact darkening and colour separation between sky-fill and sun-key.
+
+## A2. Light must be SHAPED, not just emitted
+Raking light through and around geometry is the signature. Required:
+- Long directional shadows that describe the geometry casting them.
+- Patterned/broken light: shadow grids from railings, louvres, palm fronds and
+  building edges falling across roads, walls and vehicles. Flat unbroken pools of
+  light are a fail.
+- Light filtering through cloud; shafts and haze around strong sources at dusk/night.
+- Lens flare / veiling glare when the sun is near frame — restrained, anamorphic-ish,
+  never a stock starburst sprite.
+
+## A3. Global illumination behaviour (fake it, but fake it correctly)
+We cannot ray-trace. We MUST still satisfy the observable consequences:
+- Surfaces in shadow are lit by BOUNCED colour from nearby lit surfaces and the sky,
+  never by flat grey ambient.
+- Warm sunlit ground should throw warmth onto the undersides and lower storeys of
+  nearby geometry; neon should tint the walls, road and objects around it.
+- Ambient occlusion in every crevice, under every vehicle, at every ground contact.
+
+## A4. Wet-surface and reflection behaviour
+- Puddles and wet asphalt carry vertical, stretched, broken reflections of lights
+  above them. Sharp mirror reflections are wrong; so is no reflection at all.
+- Reflection intensity must rise at night and after rain.
+
+## A5. Volumetric atmosphere
+- Visible fog/haze with depth: not a flat colour wash but density that reveals
+  light shafts and separates depth planes.
+- Aerial perspective: distant geometry desaturates and shifts to sky colour.
+
+## A6. Density and life
+- The frame should feel POPULATED: crowds, traffic, signage, clutter, wear.
+- Emptiness reads as unfinished regardless of lighting quality.
+
+## A7. Materials
+- Skin/soft materials need subsurface-like softness, not plastic shading.
+- Every surface needs microvariation; uniform albedo is a fail.
+
+## GRADING NOTE FOR CRITICS
+Our hard ceiling: software rasterisation, no GPU. Do NOT grade on raw polygon
+count, texture resolution, or effects we cannot afford. DO grade without mercy on
+art direction, colour, composition, light shaping, atmosphere and density — these
+are free of hardware and are where the frame is won or lost.
