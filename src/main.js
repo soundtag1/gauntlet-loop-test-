@@ -5,6 +5,15 @@ import { TimeOfDay } from './systems/time.js';
 import { City } from './world/city.js';
 import { Buildings } from './world/buildings.js';
 import { buildComposer } from './render/post.js';
+import { Streets } from './world/streets.js';
+import { Props } from './world/props.js';
+import { Water } from './world/water.js';
+import { Vegetation } from './world/vegetation.js';
+import { Vehicles } from './entities/vehicle.js';
+import { Player } from './entities/player.js';
+import { Traffic } from './systems/traffic.js';
+import { Peds } from './systems/peds.js';
+import { GameCamera } from './systems/gamecamera.js';
 
 export class Game {
   constructor(canvas){
@@ -56,6 +65,26 @@ export class Game {
     this.time=new TimeOfDay(this.scene, this.sky, this.lights, CONFIG.time.start, CONFIG.time.speed);
     this.city=new City(this.scene, CONFIG.seed).build();
     this.buildings=new Buildings(this.scene, this.city, CONFIG.seed+7).build();
+
+    // Shared context handed to every subsystem. Modules must not reach past this.
+    const ctx=this.ctx={
+      city:this.city, time:this.time, sky:this.sky, lights:this.lights,
+      camera:this.camera, renderer:this.renderer, scene:this.scene,
+      seed:CONFIG.seed, THREE,
+      get hour(){ return this.time.hour; },
+      get nightFactor(){ return this.time.nightFactor; },
+    };
+    this.modules=[];
+    const add=(M,key)=>{ const m=new M(this.scene, ctx).build(); this[key]=m; ctx[key]=m; this.modules.push(m); return m; };
+    add(Streets,'streets');
+    add(Water,'water');
+    add(Vegetation,'vegetation');
+    add(Props,'props');
+    add(Vehicles,'vehicles');
+    add(Traffic,'traffic');
+    add(Peds,'peds');
+    add(Player,'player');
+    add(GameCamera,'gamecamera');
   }
 
   initPost(){
@@ -102,6 +131,7 @@ export class Game {
     this.lights.sun.target.updateMatrixWorld();
     this.lights.sun.position.copy(this.lights.sun.target.position)
       .add(this.sky.uniforms.uSunDir.value.clone().multiplyScalar(420));
+    for(const m of this.modules){ try{ m.update(dt, this.ctx); }catch(e){ if(!m.__err){ m.__err=1; console.error('module update failed:', m.constructor.name, e.message); } } }
     if(this.grade) this.grade.uniforms.uTime.value += dt;
     this.composer.render();
     this.frame++;
