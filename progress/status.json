@@ -1,0 +1,29 @@
+{
+  "wave": 1,
+  "headline": "Wave 1 — specialist builders running",
+  "note": "Foundation is verified and committed. Four specialists are now building the street layer, neon, architecture and coastline in parallel. Every frame below is a real render from the running game, captured headlessly.",
+  "agents": [
+    {"name":"Streets",      "scope":"src/world/streets.js",                    "state":"running", "detail":"Asphalt, lane markings, crosswalks, puddle reflectance"},
+    {"name":"Neon & Props", "scope":"src/world/props.js",                      "state":"running", "detail":"Signage, streetlights, light pools, traffic furniture"},
+    {"name":"Architecture", "scope":"src/world/buildings.js, city.js",         "state":"running", "detail":"Massing, setbacks, ground-floor retail, facade albedo"},
+    {"name":"Coastline",    "scope":"src/world/water.js, vegetation.js",       "state":"running", "detail":"Ocean shader, sun glitter, shoreline foam, palms"},
+    {"name":"Vehicles",     "scope":"src/entities/vehicle.js",                 "state":"queued",  "detail":"Driving model, suspension, body roll"},
+    {"name":"Traffic & Peds","scope":"src/systems/traffic.js, peds.js",        "state":"queued",  "detail":"Road-following AI, crowd sim"},
+    {"name":"Player & Camera","scope":"src/entities/player.js, gamecamera.js", "state":"queued",  "detail":"Third-person locomotion, camera weight"},
+    {"name":"Grade & Light","scope":"src/render/post.js, systems/time.js",     "state":"queued",  "detail":"Bloom balance, tonemap, colour grade"}
+  ],
+  "done": [
+    "WebGL2 verified under headless software rendering",
+    "Atmospheric sky: gradient ramp, sun disc, fbm clouds, aerial perspective",
+    "Time-of-day across a 10-key 24h ramp driving sun, sky, fog",
+    "Procedural city: districts, block/road grid, world-scale facade UVs",
+    "Post chain: bloom -> ACES -> film grade -> SMAA",
+    "Reproducible 8-shot capture harness"
+  ],
+  "known_gaps": [
+    "Streets are bare — no markings, kerb detail or wet reflectance yet",
+    "Facades read too dark; base albedo loses to window emissive",
+    "Building massing is still largely uniform boxes",
+    "No vehicles, pedestrians or player character in the world yet"
+  ]
+}
