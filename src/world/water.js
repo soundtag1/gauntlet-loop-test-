@@ -377,6 +377,21 @@ export class Water {
     return this;
   }
 
+  // Ground height at a world position: the beach ramp between the city edge
+  // and the waterline, 0 inland, sea level offshore. Used by vegetation.
+  heightAt(x, z){
+    const th = Math.atan2(z, x);
+    const r = Math.hypot(x, z);
+    const inner = squareR(th, CITY_EDGE), outer = shoreR(th);
+    if (r >= outer) return SEA_Y;
+    if (r <= inner) return 0;
+    const d = outer - r;
+    const u = Math.min(d / Math.max(outer - inner, 1), 1);
+    const rise = Math.pow(Math.min(u / 0.30, 1), 0.7);
+    const taper = 1 - 0.90 * THREE.MathUtils.smoothstep(u, 0.55, 1.0);
+    return -0.12 + 0.95 * rise * taper;
+  }
+
   update(dt, ctx){
     this.t += dt;
     const c = ctx || this.ctx;

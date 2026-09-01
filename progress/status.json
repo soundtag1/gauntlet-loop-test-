@@ -1,7 +1,7 @@
 {
-  "wave": 1,
-  "headline": "Wave 1 integrated \u2014 builders resumed after a rate limit",
-  "note": "All four specialists were killed mid-pass by a session rate limit; the working tree survived with zero runtime errors and is committed. Architecture and Streets are now resumed with their context intact. Every frame below is a real render from the running game.",
+  "wave": 2,
+  "headline": "Architecture landed \u2014 bright facades, varied massing, landmark towers",
+  "note": "The facade defect is fixed: walls now read as lit stucco with framed windows, and the skyline has real silhouette variety. Streets and Coastline are still building. Two infrastructure bugs were found and fixed this wave \u2014 a stale web server was serving old code to screenshots, and the capture harness was aborting on slow frames. Both would have quietly corrupted the review loop.",
   "agents": [
     {
       "name": "Streets",
@@ -18,13 +18,13 @@
     {
       "name": "Architecture",
       "scope": "src/world/buildings.js, city.js",
-      "state": "running",
+      "state": "done",
       "detail": "Massing, setbacks, ground-floor retail, facade albedo"
     },
     {
       "name": "Coastline",
       "scope": "src/world/water.js, vegetation.js",
-      "state": "paused",
+      "state": "running",
       "detail": "Ocean shader, sun glitter, shoreline foam, palms"
     },
     {
@@ -56,18 +56,20 @@
     "WebGL2 verified under headless software rendering",
     "Atmospheric sky: gradient ramp, sun disc, fbm clouds, aerial perspective",
     "Time-of-day across a 10-key 24h ramp driving sun, sky, fog",
-    "Procedural city: districts, block/road grid, world-scale facade UVs",
-    "Neon signage layer: legible sign shapes, colour-normalised emissive, light pools",
-    "Street surface layer: wet-asphalt streak reflections, kerbs, ground-floor retail bands",
-    "Ocean module written (17KB) \u2014 pending visual verification",
-    "Bloom retuned: strength 0.40, radius 0.48, threshold 0.86 \u2014 kills the magenta flood",
-    "Reproducible 8-shot capture harness; wave-1 integration passes with 0 page errors"
+    "Bright stucco facades with mullions, transoms, sills and shopfront ground floors",
+    "Varied massing: podium+tower, setbacks, L/U plans, landmark crowns and spires",
+    "Neon signage: legible shapes, colour-normalised emissive, light pools on road",
+    "Wet-asphalt streak reflections and kerb detail",
+    "Bloom retuned (0.40/0.48/0.86) \u2014 magenta flood eliminated",
+    "Capture harness hardened: 240s timeout, survives slow frames, always writes a manifest",
+    "Fixed a stale second web server that was serving old code to screenshots"
   ],
   "known_gaps": [
-    "Facades still far too dark \u2014 windows read as decals on a black void",
-    "Lane paint invisible at night; asphalt too flat under neon",
-    "Reflections confined to a narrow band near the kerb",
+    "Noon reads cool \u2014 sun sits near-vertical, so walls get only grazing light",
+    "Lane paint still invisible at night; asphalt flat under neon (in progress)",
+    "Shopfront bay pattern repeats every 18m on long blocks",
+    "Palms still completely absent \u2014 vegetation module is an empty stub",
     "No vehicles, pedestrians or player character in the world yet",
-    "Coastline and vegetation not yet visually verified"
+    "Scene is near the software-rasterisation ceiling; heavy frames take ~30s each"
   ]
 }
