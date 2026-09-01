@@ -69,7 +69,7 @@ function crack(g, R, x, y, len, step, w, col){
 
 // Paints tarmac into the albedo ctx `g` and matching wear into roughness ctx `rg`.
 function tarmac(g, rg, W, H, R, pxPerM){
-  g.fillStyle = '#37363f'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#3d3c47'; g.fillRect(0, 0, W, H);
   rg.fillStyle = '#d2d2d2'; rg.fillRect(0, 0, W, H);   // rough by default
 
   // large-scale aggregate blotching
@@ -86,7 +86,7 @@ function tarmac(g, rg, W, H, R, pxPerM){
     const t = R.f(-20, 26);
     g.fillStyle = `rgba(${(58+t)|0},${(56+t)|0},${(64+t)|0},0.70)`;
     g.fillRect(px, py, pw, ph);
-    g.strokeStyle = 'rgba(12,12,15,0.75)'; g.lineWidth = Math.max(1, pxPerM*0.06);
+    g.strokeStyle = 'rgba(10,10,13,0.9)'; g.lineWidth = Math.max(1, pxPerM*0.09);
     g.strokeRect(px, py, pw, ph);
     rg.fillStyle = `rgba(255,255,255,${R.f(0.05,0.18).toFixed(3)})`;
     rg.fillRect(px, py, pw, ph);
@@ -196,8 +196,8 @@ function roadTexture(R){
   }
   // transverse construction seams every 8 m
   for(let s = 4; s < TILE_LEN; s += 8){
-    g.fillStyle = 'rgba(12,12,15,0.5)'; g.fillRect(0, my(s), W, Math.max(1, PPM*0.07));
-    g.fillStyle = 'rgba(78,76,84,0.20)'; g.fillRect(0, my(s) + PPM*0.07, W, Math.max(1, PPM*0.05));
+    g.fillStyle = 'rgba(10,10,13,0.72)'; g.fillRect(0, my(s), W, Math.max(1, PPM*0.10));
+    g.fillStyle = 'rgba(104,101,112,0.34)'; g.fillRect(0, my(s) + PPM*0.10, W, Math.max(1, PPM*0.06));
   }
   // longitudinal seam right on the crown of the road
   g.fillStyle = 'rgba(10,10,13,0.45)'; g.fillRect(mx(5.0) - PPM*0.04, 0, Math.max(1, PPM*0.08), H);
@@ -256,7 +256,7 @@ function junctionTexture(R){
   tarmac(g, rg, S, S, R, PPM);
   // junctions are polished by turning traffic -> broad smooth dark centre
   const cg = g.createRadialGradient(S/2, S/2, 0, S/2, S/2, S*0.55);
-  cg.addColorStop(0, 'rgba(14,13,17,0.55)'); cg.addColorStop(1, 'rgba(14,13,17,0)');
+  cg.addColorStop(0, 'rgba(14,13,17,0.34)'); cg.addColorStop(1, 'rgba(14,13,17,0)');
   g.fillStyle = cg; g.fillRect(0,0,S,S);
   const cgr = rg.createRadialGradient(S/2, S/2, 0, S/2, S/2, S*0.55);
   cgr.addColorStop(0, 'rgba(110,110,110,0.75)'); cgr.addColorStop(1, 'rgba(160,160,160,0)');
@@ -351,7 +351,7 @@ function kerbTexture(R){
 
 function mkTex(cA, cR, cE){
   const t = new THREE.CanvasTexture(cA);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   const r = new THREE.CanvasTexture(cR);
   r.wrapS = r.wrapT = THREE.RepeatWrapping; r.anisotropy = 4;
   let e = null;
@@ -511,7 +511,13 @@ export class Streets {
         varying vec3 vWPos;
         uniform float uNight, uWet, uWetScale;
         uniform vec3 uSkyCol, uNeonA, uNeonB, uNeonC;
-        float sh21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+        // sin-free hash: this shader runs on a software rasteriser, every
+        // transcendental costs real milliseconds over a full-screen road.
+        float sh21(vec2 p){
+          vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+          q += dot(q, q.yzx + 33.33);
+          return fract((q.x + q.y) * q.z);
+        }
         float svn(vec2 p){
           vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
           return mix(mix(sh21(i),sh21(i+vec2(1.0,0.0)),f.x),
@@ -519,12 +525,13 @@ export class Streets {
         }
         float wetMask(vec2 p){
           p *= uWetScale;
-          float n = svn(p*0.032)*0.50 + svn(p*0.11)*0.32 + svn(p*0.37)*0.18;
-          return smoothstep(0.40, 0.70, n);
+          vec2 q = p*0.145;
+          float fine = fract(q.x*0.37 + q.y*0.21 + sh21(floor(q)));
+          return smoothstep(0.34, 0.72, svn(p*0.034)*0.70 + fine*0.30);
         }`)
         .replace('#include <map_fragment>', `#include <map_fragment>
         float wetA = wetMask(vWPos.xz) * uWet;
-        diffuseColor.rgb *= mix(1.0, 0.52, wetA);`)
+        diffuseColor.rgb *= mix(1.0, 0.58, wetA);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = mix(roughnessFactor, 0.055, wetA);`)
         .replace('#include <fog_fragment>', `
@@ -533,33 +540,42 @@ export class Streets {
           float dist = length(vdir);
           vdir /= max(dist, 0.001);
           // grazing-angle fresnel: exponent 2 so the sheen reaches the near road
-          float fres = pow(1.0 - clamp(vdir.y, 0.0, 1.0), 2.0);
-          vec2 fwd = normalize(vec2(vWPos.x, vWPos.z) - vec2(cameraPosition.x, cameraPosition.z) + vec2(1e-4));
-          vec2 sid = vec2(-fwd.y, fwd.x);
-          float along  = dot(vWPos.xz, fwd);
-          float across = dot(vWPos.xz, sid);
-          // three octaves, all stretched hard ALONG the view ray so they read as
-          // vertical smears on screen, broken up across the ray.
-          float st = svn(vec2(across*0.9,  along*0.020))*0.45
-                   + svn(vec2(across*3.1,  along*0.055))*0.33
-                   + svn(vec2(across*11.0, along*0.130))*0.22;
-          st = smoothstep(0.22, 0.86, st);
-          // whole road is faintly damp; puddles reflect much harder
-          float sheen = 0.16 + 0.84 * wetA;
-          // smooth, slowly-drifting neon tint (no hard cell edges)
-          vec2 cp = (vWPos.xz + fwd*24.0) / 46.0;
-          float hcell = svn(cp);
-          vec3 neon = mix(uNeonA, uNeonB, smoothstep(0.28, 0.55, hcell));
-          neon = mix(neon, uNeonC, smoothstep(0.62, 0.86, hcell));
-          neon = mix(neon, vec3(1.0), 0.22);           // keep it off the gamut wall
-          vec3 refl = mix(uSkyCol * 0.42, neon, uNight);
-          float amp = sheen * fres * st * (0.22 + 0.80 * uNight);
-          amp *= mix(0.55, 1.0, smoothstep(4.0, 40.0, dist));   // no hot spot at the toes
-          gl_FragColor.rgb += refl * amp;
+          float fres = pow(1.0 - clamp(vdir.y, 0.0, 1.0), 3.0);
+          float sheen = (0.06 + 0.94 * wetA) * fres;
+          // hard early-out keeps the streak noise off near-vertical / far road
+          if(sheen > 0.05 && dist < 400.0){
+            vec2 fwd = normalize(vWPos.xz - cameraPosition.xz + vec2(1e-4));
+            vec2 sid = vec2(-fwd.y, fwd.x);
+            float along  = dot(vWPos.xz, fwd);
+            float across = dot(vWPos.xz, sid);
+            // widen the streaks with distance so they never alias into a comb
+            float w = 1.0 / (1.0 + dist * 0.030);
+            float st = svn(vec2(across*1.6*w, along*0.028))*0.64
+                     + svn(vec2(across*5.4*w, along*0.075))*0.36;
+            st = smoothstep(0.20, 0.82, st);
+            vec2 cp = (vWPos.xz + fwd*24.0) * 0.0217;
+            vec2 ci = floor(cp);
+            float hc = mix(sh21(ci), sh21(ci + vec2(1.0, 0.0)), smoothstep(0.0, 1.0, fract(cp.x)));
+            vec3 neon = mix(uNeonA, uNeonB, smoothstep(0.28, 0.55, hc));
+            neon = mix(neon, uNeonC, smoothstep(0.62, 0.86, hc));
+            neon = mix(neon, vec3(1.0), 0.24);
+            vec3 refl = mix(uSkyCol * 0.42, neon, uNight);
+            float amp = sheen * st * (0.18 + 0.95 * uNight);
+            // smooth on both gate edges so no band edge is ever visible
+            amp *= smoothstep(0.05, 0.16, sheen);
+            amp *= 1.0 - smoothstep(230.0, 395.0, dist);
+            amp *= mix(0.5, 1.0, smoothstep(3.0, 36.0, dist));
+            gl_FragColor.rgb += refl * amp;
+          }
         }
         #include <fog_fragment>`);
     };
-    m.customProgramCacheKey = ()=> 'streets-wet-v3-' + wetAmount.toFixed(2) + '-' + scale.value.toFixed(2);
+    // Each material carries its OWN injected uniforms, so it must get its own
+    // program: a shared cache key makes three skip onBeforeCompile for the
+    // second material and it then renders with an incomplete uniform set.
+    const ck = 'streets-wet-v4-' + wetAmount.toFixed(2) + '-' + scale.value.toFixed(2)
+             + (tex.emis ? '-e' : '');
+    m.customProgramCacheKey = ()=> ck;
     return m;
   }
 
@@ -657,7 +673,7 @@ export class Streets {
       addKerbZ(c.x + outer - KW, c.x + outer, c.z - inner, c.z + inner);
     }
     const texP = pavingTexture(R);
-    this.matW = this.wetMaterial(texP, 0.45, { wetScale: 1.7, roughness: 0.98, metalness: 0.0 });
+    this.matW = this.wetMaterial(texP, 0.25, { wetScale: 1.7, roughness: 0.98, metalness: 0.0 });
     const mW = new THREE.Mesh(soupW.geometry(), this.matW);
     mW.receiveShadow = true; mW.renderOrder = 1;
     this.group.add(mW);
@@ -703,18 +719,18 @@ export class Streets {
         // --- E-W road at z=a, junction at x=b ---
         if(R.bool(0.55)){
           const k = R.bool(0.3) ? 1 : 0;
-          items.push([b - HC - 5.5, a + 2.5, -Math.PI/2, k]);
-          if(R.bool(0.45)) items.push([b - HC - 13.0, a + 2.5, -Math.PI/2, 0]);
+          items.push([b - HC - 5.5, a + 2.5, Math.PI/2, k]);
+          if(R.bool(0.45)) items.push([b - HC - 13.0, a + 2.5, Math.PI/2, 0]);
         }
         if(R.bool(0.55)){
           const k = R.bool(0.3) ? 1 : 0;
-          items.push([b + HC + 5.5, a - 2.5, Math.PI/2, k]);
-          if(R.bool(0.45)) items.push([b + HC + 13.0, a - 2.5, Math.PI/2, 0]);
+          items.push([b + HC + 5.5, a - 2.5, -Math.PI/2, k]);
+          if(R.bool(0.45)) items.push([b + HC + 13.0, a - 2.5, -Math.PI/2, 0]);
         }
       }
     }
     const geo = new THREE.PlaneGeometry(2.2, 4.4);
-    geo.rotateX(-Math.PI/2);
+    geo.rotateX(-Math.PI/2); geo.rotateY(Math.PI);   // head points +Z at rot 0
     const mk = (t)=> new THREE.MeshStandardMaterial({
       map: t, transparent: false, alphaTest: 0.42, roughness: 0.78, metalness: 0.0,
       polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5,
