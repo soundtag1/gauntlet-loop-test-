@@ -353,11 +353,11 @@ function mkTex(cA, cR, cE){
   const t = new THREE.CanvasTexture(cA);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   const r = new THREE.CanvasTexture(cR);
-  r.wrapS = r.wrapT = THREE.RepeatWrapping; r.anisotropy = 4;
+  r.wrapS = r.wrapT = THREE.RepeatWrapping; r.anisotropy = 1;
   let e = null;
   if(cE){
     e = new THREE.CanvasTexture(cE);
-    e.wrapS = e.wrapT = THREE.RepeatWrapping; e.colorSpace = THREE.SRGBColorSpace; e.anisotropy = 4;
+    e.wrapS = e.wrapT = THREE.RepeatWrapping; e.colorSpace = THREE.SRGBColorSpace; e.anisotropy = 1;
   }
   return { map: t, rough: r, emis: e };
 }

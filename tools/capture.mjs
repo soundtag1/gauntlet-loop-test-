@@ -15,6 +15,10 @@ const browser = await chromium.launch({
          '--no-sandbox','--disable-dev-shm-usage','--max-old-space-size=4096'],
 });
 const page = await browser.newPage({ viewport:{ width:W, height:H }, deviceScaleFactor:1 });
+// Software rasterisation on 4 shared cores: a heavy frame can take minutes when
+// several agents render at once. The default 30s screenshot timeout aborts the
+// whole run and leaves no manifest, which blinds the critic loop.
+page.setDefaultTimeout(240000);
 const errors=[];
 page.on('pageerror', e=>{ errors.push(String(e.message)); });
 page.on('console', m=>{ if(m.type()==='error') errors.push('[console] '+m.text()); });
@@ -32,6 +36,8 @@ try {
 console.log('harness ready. building shots…');
 
 const results=[];
+process.on('exit', ()=>{ try{ fs.writeFileSync(path.join(outDir,'manifest.json'),
+  JSON.stringify({label,W,H,errors,results},null,2)); }catch{} });
 for(const s of shots){
   const t0=Date.now();
   await page.evaluate(([s])=>{
@@ -42,12 +48,24 @@ for(const s of shots){
   await page.waitForTimeout(350);
   await page.evaluate(()=>window.HARNESS.settle(4));
   const file=path.join(outDir, s.name+'.png');
-  await page.screenshot({ path:file });
-  const st=await page.evaluate(()=>window.HARNESS.stats());
-  results.push({ ...s, file, ms:Date.now()-t0, ...st });
-  console.log(`  ${s.name}  ${Date.now()-t0}ms  calls=${st.calls} tris=${st.tris}`);
+  let shotOk=true;
+  try{
+    await page.screenshot({ path:file, timeout:240000 });
+  }catch(err){
+    // One slow frame must not destroy the whole capture set.
+    shotOk=false; errors.push(`screenshot failed ${s.name}: ${err.message.split('\n')[0]}`);
+    console.log(`  ${s.name}  SCREENSHOT FAILED (${err.message.split('\n')[0]})`);
+  }
+  let st={};
+  try{ st=await page.evaluate(()=>window.HARNESS.stats()); }catch{}
+  results.push({ ...s, file, ok:shotOk, ms:Date.now()-t0, ...st });
+  if(shotOk) console.log(`  ${s.name}  ${Date.now()-t0}ms  calls=${st.calls} tris=${st.tris}`);
 }
-fs.writeFileSync(path.join(outDir,'manifest.json'), JSON.stringify({label, W,H, errors, results}, null, 2));
+writeManifest();
+function writeManifest(){
+  fs.writeFileSync(path.join(outDir,'manifest.json'),
+    JSON.stringify({label, W, H, errors, results}, null, 2));
+}
 if(errors.length) console.log('PAGE ERRORS:\n'+errors.slice(0,20).join('\n'));
 console.log('done ->', outDir);
 await browser.close();
