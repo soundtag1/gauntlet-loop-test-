@@ -53,8 +53,9 @@ Target register: sun-bleached neo-Miami crime drama. Humid, saturated, cinematic
 
 ---
 
-# ADDENDUM — criteria derived from published visual analyses
-Sourced from technical/critical breakdowns of the reference material's look.
+# ADDENDUM — general rendering & cinematography criteria
+Derived from general real-time-rendering and cinematography principles (model
+knowledge, not fetched sources — this machine has no web egress).
 These are gradeable REQUIREMENTS, not aspirations. Critics: score each.
 
 ## A1. Low sun is the hero condition

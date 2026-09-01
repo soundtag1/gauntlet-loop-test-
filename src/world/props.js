@@ -56,9 +56,14 @@ export class Props {
   push(list, px, py, pz, sx, sy, sz, ry, col, rx = 0){
     list.push({ p: [px, py, pz], s: [sx, sy, sz], r: [rx, ry, 0], c: col });
   }
-  // emissive box. hex + intensity -> linear colour possibly > 1 so bloom bites.
-  neonCol(hex, intensity){
-    const c = new THREE.Color(hex); c.multiplyScalar(intensity);
+  // Emissive colour normalised by LUMINANCE. UnrealBloomPass thresholds on
+  // luminance (0.72), so a saturated magenta (lum 0.25) needs ~6x the multiplier
+  // of an amber (lum 0.66) to bloom at all. Passing a target luminance keeps
+  // every hue equally hot and stops the warm ones clipping to white.
+  neonCol(hex, lum){
+    const c = new THREE.Color(hex);
+    const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    c.multiplyScalar(lum / Math.max(l, 0.06));
     return [c.r, c.g, c.b];
   }
   addNeon(px, py, pz, sx, sy, sz, ry, hex, inten, flicker, R){
@@ -111,6 +116,10 @@ export class Props {
       for(const f of faces){
         this.facadeProps(b, f, neon, R);
       }
+      // multi-storey blades on the towers (visible when the camera looks up)
+      if(b.h >= 26 && R.bool(0.25 + neon * 0.55)){
+        this.tallBlade(b, faces[R.i(0, faces.length - 1)], R);
+      }
       // rooftop signage on the taller stock
       if(b.h >= 22 && R.bool(neon * 0.75)){
         const f = faces[R.i(0, faces.length - 1)];
@@ -134,23 +143,25 @@ export class Props {
     if(R.bool(0.30 + neon * 0.62)){
       const w = Math.min(f.along * R.f(0.42, 0.72), 10), h = R.f(1.2, 2.0);
       const u = R.f(-maxU + w / 2, maxU - w / 2), y = R.f(3.6, 5.4);
-      const c = hex(), inten = R.f(2.0, 3.6), fl = R.bool(0.22);
+      const c = hex(), inten = R.f(1.5, 2.3), fl = R.bool(0.22);
       let [x, z] = this.fpt(b, f, u, 0.06);
       this.push(this.B.plate, x, y, z, w + 0.7, h + 0.6, 0.22, ry, [0.06, 0.06, 0.09]);
       [x, z] = this.fpt(b, f, u, 0.26);
       this.addNeon(x, y, z, w, h, 0.22, ry, c, inten, fl, R);
       [x, z] = this.fpt(b, f, u, 0.16);
-      this.addGlow(x, y, z, w * 2.1, h * 4.2, ry, c, R.f(0.7, 1.1));
+      this.addGlow(x, y, z, w * 1.7, h * 3.0, ry, c, R.f(0.34, 0.55));
+      this.spill(b, f, u, w, c, R);
     }
 
     // ---- vertical blade sign hanging off the wall -----------------------
     if(R.bool(0.10 + neon * 0.45)){
       const dep = R.f(1.6, 2.6), h = Math.min(R.f(4.0, 8.0), Math.max(b.h - 3.0, 2.5));
       const u = R.f(-maxU, maxU), y = R.f(5.0, 6.0) + h / 2;
-      const c = hex(), inten = R.f(2.2, 3.8), fl = R.bool(0.3);
+      const c = hex(), inten = R.f(1.7, 2.6), fl = R.bool(0.3);
       const [x, z] = this.fpt(b, f, u, 0.15 + dep / 2);
       this.addNeon(x, y, z, dep, h, 0.24, ry + Math.PI / 2, c, inten, fl, R);
-      this.addGlow(x, y, z, dep * 2.6, h * 1.5, ry + Math.PI / 2, c, R.f(0.55, 0.9));
+      this.addGlow(x, y, z, dep * 2.6, h * 1.4, ry + Math.PI / 2, c, R.f(0.36, 0.6));
+      this.spill(b, f, u, dep * 2.0, c, R);
       // little bracket back to the wall
       const [bx2, bz2] = this.fpt(b, f, u, 0.15 + dep * 0.25);
       this.addFurn(bx2, y + h / 2 - 0.2, bz2, dep * 0.5, 0.14, 0.14, ry + Math.PI / 2, 0x1a1a22);
@@ -160,14 +171,14 @@ export class Props {
     if(R.bool(0.08 + neon * 0.40)){
       const w = Math.min(f.along * R.f(0.22, 0.40), 5.5), h = R.f(1.6, 3.0);
       const u = R.f(-maxU + w / 2, maxU - w / 2), y = R.f(3.4, 4.8);
-      const c = hex(), inten = R.f(2.4, 4.0), t = 0.2, fl = R.bool(0.25);
+      const c = hex(), inten = R.f(2.0, 3.0), t = 0.2, fl = R.bool(0.25);
       const seg = [[0, h / 2, w, t], [0, -h / 2, w, t], [-w / 2, 0, t, h], [w / 2, 0, t, h]];
       for(const [du, dy, sw, sh] of seg){
         const [x, z] = this.fpt(b, f, u + du, 0.24);
         this.addNeon(x, y + dy, z, sw, sh, 0.16, ry, c, inten, fl, R);
       }
       const [gx, gz] = this.fpt(b, f, u, 0.16);
-      this.addGlow(gx, y, gz, w * 2.2, h * 2.6, ry, c, R.f(0.5, 0.8));
+      this.addGlow(gx, y, gz, w * 2.0, h * 2.4, ry, c, R.f(0.28, 0.45));
     }
 
     // ---- glowing letter strip -------------------------------------------
@@ -175,23 +186,23 @@ export class Props {
       const n = R.i(4, 8), gap = R.f(0.55, 0.9);
       const wTot = n * gap;
       const u0 = R.f(-maxU + wTot / 2, maxU - wTot / 2), y = R.f(6.4, Math.max(7.0, Math.min(b.h - 2.0, 16)));
-      const c = hex(), inten = R.f(2.6, 4.0), fl = R.bool(0.3);
+      const c = hex(), inten = R.f(2.0, 3.0), fl = R.bool(0.3);
       for(let i = 0; i < n; i++){
         const u = u0 - wTot / 2 + gap * (i + 0.5);
         const [x, z] = this.fpt(b, f, u, 0.24);
         this.addNeon(x, y + R.f(-0.08, 0.08), z, gap * 0.62, R.f(0.7, 1.0), 0.16, ry, c, inten, fl, R);
       }
       const [gx, gz] = this.fpt(b, f, u0, 0.16);
-      this.addGlow(gx, y, gz, wTot * 1.7, 5.0, ry, c, R.f(0.45, 0.75));
+      this.addGlow(gx, y, gz, wTot * 1.6, 4.5, ry, c, R.f(0.26, 0.42));
     }
 
     // ---- continuous cornice strip above the ground floor ----------------
     if(R.bool(0.06 + neon * 0.42)){
       const w = f.along * 0.92, y = R.f(6.6, 7.6);
-      const c = hex(), inten = R.f(1.8, 3.0);
+      const c = hex(), inten = R.f(1.3, 1.9);
       const [x, z] = this.fpt(b, f, 0, 0.22);
       this.addNeon(x, y, z, w, 0.22, 0.16, ry, c, inten, R.bool(0.12), R);
-      this.addGlow(x, y, z, w * 1.05, 3.4, ry, c, R.f(0.4, 0.65));
+      this.addGlow(x, y, z, w * 1.02, 2.4, ry, c, R.f(0.20, 0.32));
     }
 
     // ---- AC units at window level ---------------------------------------
@@ -205,45 +216,82 @@ export class Props {
     }
   }
 
+  // Neon spilling down the wall onto the pavement/road: a stretched additive
+  // ellipse lying on the ground, elongated away from the facade. Reads as the
+  // wet-asphalt smear of a sign overhead (rubric A4) and, more importantly,
+  // puts the sign's colour on the street instead of only on the wall.
+  spill(b, f, u, w, hex, R){
+    const ry = Math.atan2(f.nx, f.nz);
+    const len = R.f(9, 15);
+    const [x, z] = this.fpt(b, f, u, 0.4 + len * 0.42);
+    this.push(this.B.glow, x, 0.055, z, w * R.f(1.1, 1.6), len,
+      1, ry, this.neonCol(hex, R.f(0.30, 0.55)), Math.PI / 2);
+  }
+
+  // Multi-storey blade running up a tower — the thing you see when you look up.
+  tallBlade(b, f, R){
+    const ry = Math.atan2(f.nx, f.nz);
+    const dep = R.f(2.2, 3.6);
+    const h = Math.min(R.f(10, 24), b.h * 0.55);
+    const y = R.f(10, Math.max(11, b.h * 0.55));
+    const u = R.f(-f.along * 0.36, f.along * 0.36);
+    const c = NEON[R.i(0, NEON.length - 1)], inten = R.f(1.8, 2.6);
+    const [x, z] = this.fpt(b, f, u, 0.15 + dep / 2);
+    this.addNeon(x, y, z, dep, h, 0.3, ry + Math.PI / 2, c, inten, R.bool(0.28), R);
+    this.addGlow(x, y, z, dep * 3.0, h * 1.25, ry + Math.PI / 2, c, R.f(0.35, 0.55));
+    // vertical stack of lit letter cells reading down the blade
+    const cells = Math.max(2, Math.floor(h / 2.2));
+    for(let i = 0; i < cells; i++){
+      const yy = y + h / 2 - (i + 0.5) * (h / cells);
+      this.addNeon(x, yy, z, dep * 0.55, h / cells * 0.5, 0.34,
+        ry + Math.PI / 2, 0xfff2c8, 2.4, false, R);
+    }
+    for(let i = 0; i < 3; i++){
+      const yy = y - h / 2 + (i + 0.5) * (h / 3);
+      const [bx2, bz2] = this.fpt(b, f, u, 0.15 + dep * 0.25);
+      this.addFurn(bx2, yy, bz2, dep * 0.55, 0.16, 0.16, ry + Math.PI / 2, 0x17171e);
+    }
+  }
+
   roofSign(b, f, R){
     const ry = Math.atan2(f.nx, f.nz);
     const w = Math.min(f.along * R.f(0.5, 0.85), 14), h = R.f(2.4, 4.2);
     const y = b.h + 1.6 + h / 2;
-    const c = NEON[R.i(0, NEON.length - 1)], inten = R.f(2.4, 4.0);
+    const c = NEON[R.i(0, NEON.length - 1)], inten = R.f(1.7, 2.5);
     const fl = R.bool(0.3);
     const [x, z] = this.fpt(b, f, 0, -Math.min(f.half * 0.5, 2.0));
     // legs
     this.addFurn(x - 0, 1e-3 + b.h + 0.8, z, w * 0.9, 1.6, 0.18, ry, 0x141419);
     this.addNeon(x, y, z, w, h, 0.3, ry, c, inten, fl, R);
-    this.addGlow(x, y, z, w * 1.5, h * 3.0, ry, c, R.f(0.7, 1.1));
+    this.addGlow(x, y, z, w * 1.4, h * 2.4, ry, c, R.f(0.38, 0.6));
   }
 
   // ---- streetlights, furniture, traffic lights, utility poles -----------
   buildStreet(R){
     const city = this.ctx.city, n = city.n, s = city.stride, half = city.span / 2, rw = city.rw;
-    const SP = 36;              // lamp spacing
+    const SP = 30;              // lamp spacing
     const EDGE = rw / 2 + 1.3;  // on the kerb
     let prevPole = null;
 
     for(let axis = 0; axis < 2; axis++){
       for(let i = 0; i <= n; i++){
         const off = -half + i * s;
-        const side = ((i + axis) % 2) ? 1 : -1;
         prevPole = null;
         let k = 0;
         for(let u = -half + 12; u < half; u += SP, k++){
+          const side = (k % 2) ? 1 : -1;   // stagger lamps down both kerbs
           // skip intersections
           const m = (((u + half) % s) + s) % s;
           if(m < rw + 5 || m > s - 5) continue;
           const px = axis ? u : off + side * EDGE;
           const pz = axis ? off + side * EDGE : u;
           const dx = axis ? 0 : -side, dz = axis ? -side : 0;   // toward road centre
-          this.streetlight(px, pz, dx, dz, R);
+          this.streetlight(px, pz, dx, dz, axis, R);
 
           // side furniture, pushed a little further onto the pavement
           const fx = px - dx * 1.9, fz = pz - dz * 1.9;
           const fry = Math.atan2(dx, dz);
-          const roll = R.f(0, 1);
+          const roll = R.f(0, 1) * (k % 2 ? 1.0 : 2.2);
           if(roll < 0.16) this.bench(fx, fz, fry, R);
           else if(roll < 0.26) this.hydrant(px + dz * 5, pz + dx * 5, R);
           else if(roll < 0.36) this.bin(fx, fz, fry, R);
@@ -272,18 +320,21 @@ export class Props {
     }
   }
 
-  streetlight(px, pz, dx, dz, R){
+  streetlight(px, pz, dx, dz, axis, R){
     const ry = Math.atan2(-dz, dx);       // local +x -> (dx,dz)
     this.push(this.B.pole, px, 0.16, pz, 1, 1, 1, ry, [0.09, 0.095, 0.11]);
-    const hx = px + dx * 2.05, hz = pz + dz * 2.05, hy = 8.35;
+    const hx = px + dx * 2.6, hz = pz + dz * 2.6, hy = 8.35;
     // lamp head: emissive amber slab
-    this.addNeon(hx, hy, hz, 1.15, 0.3, 0.6, ry, LAMP_WARM, 3.2, R.bool(0.06), R);
+    this.addNeon(hx, hy, hz, 1.15, 0.3, 0.6, ry, LAMP_WARM, 1.9, R.bool(0.05), R);
     // tight halo on the head
-    this.addGlow(hx, hy - 0.1, hz, 3.4, 2.4, ry + Math.PI / 2, LAMP_WARM, 1.0);
+    this.addGlow(hx, hy - 0.1, hz, 3.0, 2.2, ry + Math.PI / 2, LAMP_WARM, 0.55);
     // haze cone hanging under the lamp
-    this.push(this.B.cone, hx, hy / 2 + 0.1, hz, 3.9, hy - 0.3, 3.9, 0, this.neonCol(LAMP_WARM, 0.55));
-    // ground pool
-    this.push(this.B.glow, hx, 0.07, hz, 15.5, 15.5, 1, 0, this.neonCol(LAMP_WARM, 0.95), -Math.PI / 2);
+    this.push(this.B.cone, hx, hy / 2 + 0.1, hz, 4.4, hy - 0.3, 4.4, 0, this.neonCol(LAMP_WARM, 0.34));
+    // ground pool — elongated ALONG the road so it reads as a lit strip of asphalt
+    const sx = axis ? 26 : 15, sy = axis ? 15 : 26;
+    this.push(this.B.glow, hx, 0.065, hz, sx, sy, 1, 0, this.neonCol(LAMP_WARM, 0.62), -Math.PI / 2);
+    // hotter core right under the lamp
+    this.push(this.B.glow, hx, 0.075, hz, 7.5, 7.5, 1, 0, this.neonCol(LAMP_WARM, 0.5), -Math.PI / 2);
   }
 
   bench(x, z, ry, R){
@@ -319,15 +370,13 @@ export class Props {
     this.push(this.B.glass, x - 0.75 * s, 1.5, z - 0.75 * c, 4.4, 2.5, 1, ry, [0.55, 0.78, 0.82]);
     // lit ad panel — a proper little bloom source
     const c2 = R.bool(0.5) ? 0x23e0d5 : 0xfff2c8;
-    this.addNeon(x + 2.1 * c - 0.35 * s, 1.55, z - 2.1 * s - 0.35 * c, 1.3, 2.1, 0.14, ry, c2, 2.2, false, R);
-    this.addGlow(x + 2.1 * c - 0.45 * s, 1.55, z - 2.1 * s - 0.45 * c, 4.0, 5.0, ry, c2, 0.6);
+    this.addNeon(x + 2.1 * c - 0.35 * s, 1.55, z - 2.1 * s - 0.35 * c, 1.3, 2.1, 0.14, ry, c2, 1.7, false, R);
+    this.addGlow(x + 2.1 * c - 0.45 * s, 1.55, z - 2.1 * s - 0.45 * c, 3.6, 4.4, ry, c2, 0.4);
   }
   utilityPole(x, z, ry, R){
     this.addFurn(x, 4.6, z, 0.3, 9.2, 0.3, ry, 0x4a3c2e);
     this.addFurn(x, 8.5, z, 2.6, 0.16, 0.16, ry + Math.PI / 2, 0x4a3c2e);
     this.addFurn(x, 7.7, z, 2.0, 0.14, 0.14, ry + Math.PI / 2, 0x4a3c2e);
-    this._poleTops = this._poleTops || {};
-    this._poleTops[x.toFixed(2) + ',' + z.toFixed(2)] = 1;
   }
   cable(a, b){
     const [x0, z0] = a, [x1, z1] = b;
@@ -358,8 +407,8 @@ export class Props {
     for(let i = 0; i < 3; i++){
       const on = i === phase;
       const y = 5.9 - i * 0.5;
-      this.addNeon(hx, y, hz - 0.0, 0.34, 0.34, 0.34, ry, lens[i], on ? 3.2 : 0.25, false, R);
-      if(on) this.addGlow(hx, y, hz, 2.4, 2.4, ry, lens[i], 0.8);
+      this.addNeon(hx, y, hz - 0.0, 0.34, 0.34, 0.34, ry, lens[i], on ? 2.4 : 0.10, false, R);
+      if(on) this.addGlow(hx, y, hz, 2.6, 2.6, ry, lens[i], 0.5);
     }
   }
 
@@ -371,10 +420,11 @@ export class Props {
     im.castShadow = castShadow; im.receiveShadow = false;
     im.frustumCulled = true;
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+    e.order = 'YXZ';
     const p = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
     for(let i = 0; i < items.length; i++){
       const it = items[i];
-      e.set(it.r[0], it.r[1], it.r[2]);
+      e.set(it.r[0], it.r[1], it.r[2], 'YXZ');
       q.setFromEuler(e);
       p.set(it.p[0], it.p[1], it.p[2]);
       sc.set(it.s[0], it.s[1], it.s[2]);
@@ -407,11 +457,10 @@ export class Props {
 
     // one merged geometry for the whole streetlight body (pole + arm)
     const poleGeo = (() => {
-      const g1 = new THREE.CylinderGeometry(0.16, 0.24, 8.2, 6, 1);
+      const g1 = new THREE.CylinderGeometry(0.16, 0.26, 8.2, 6, 1, true);
       g1.translate(0, 4.1, 0);
-      const g2 = new THREE.BoxGeometry(2.3, 0.18, 0.18); g2.translate(1.15, 8.2, 0);
-      const g3 = new THREE.BoxGeometry(0.5, 0.5, 0.5); g3.translate(0, 0.05, 0);
-      return mergeGeometries([g1, g2, g3], false);
+      const g2 = new THREE.BoxGeometry(2.9, 0.18, 0.18); g2.translate(1.45, 8.2, 0);
+      return mergeGeometries([g1, g2], false);
     })();
     const hydGeo = (() => {
       const a = new THREE.CylinderGeometry(0.2, 0.24, 0.9, 6); a.translate(0, 0, 0);
@@ -456,7 +505,7 @@ export class Props {
     const lvl = 0.16 + 0.84 * nf;
     if(this.matNeon) this.matNeon.color.setScalar(lvl);
     if(this.matGlow) this.matGlow.opacity = 0.10 + 0.85 * nf;
-    if(this.matCone) this.matCone.opacity = 0.02 + 0.42 * nf;
+    if(this.matCone) this.matCone.opacity = 0.02 + 0.24 * nf;
 
     const fm = this.flickMesh;
     if(fm && fm.instanceColor){

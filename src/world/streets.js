@@ -128,8 +128,11 @@ function wheelTrack(g, rg, x, W, H, wpx){
   rg.fillStyle = rgd; rg.fillRect(x - wpx, 0, wpx*2, H);
 }
 
-// Worn paint stroke: white/yellow with scuffed alpha so it never reads as vinyl.
+// Road paint is retro-reflective: we also accumulate a paint mask used as an
+// emissiveMap so markings still read at night (rubric: never flat dead grey).
+let EMIT = null;
 function paintRect(g, rg, R, x, y, w, h, col, wear){
+  if(EMIT){ EMIT.fillStyle = col; EMIT.globalAlpha = 0.85; EMIT.fillRect(x, y, w, h); EMIT.globalAlpha = 1; }
   g.save();
   g.fillStyle = col; g.globalAlpha = 0.92; g.fillRect(x, y, w, h); g.restore();
   // scuff it
@@ -151,6 +154,7 @@ function roadTexture(R){
   const W = Math.round(CLEAR * PPM), H = Math.round(TILE_LEN * PPM);
   const cA = canvas(W, H), g = cA.getContext('2d');
   const cR = canvas(W, H), rg = cR.getContext('2d');
+  const cE = newEmit(W, H);
   const mx = (m)=> m * PPM;                       // metres across -> px
   const my = (m)=> m * PPM;                       // metres along  -> px
 
@@ -198,7 +202,8 @@ function roadTexture(R){
   // longitudinal seam right on the crown of the road
   g.fillStyle = 'rgba(10,10,13,0.45)'; g.fillRect(mx(5.0) - PPM*0.04, 0, Math.max(1, PPM*0.08), H);
 
-  return mkTex(cA, cR);
+  EMIT = null;
+  return mkTex(cA, cR, cE);
 }
 
 // Dashed-centre variant for secondary streets (visual variety, same footprint).
@@ -207,6 +212,7 @@ function roadTextureDashed(R){
   const W = Math.round(CLEAR * PPM), H = Math.round(TILE_LEN * PPM);
   const cA = canvas(W, H), g = cA.getContext('2d');
   const cR = canvas(W, H), rg = cR.getContext('2d');
+  const cE = newEmit(W, H);
   const mx = (m)=> m * PPM, my = (m)=> m * PPM;
   tarmac(g, rg, W, H, R, PPM);
   for(const s of [0, 1]){
@@ -232,7 +238,8 @@ function roadTextureDashed(R){
   for(let s = 4; s < TILE_LEN; s += 8){
     g.fillStyle = 'rgba(12,12,15,0.45)'; g.fillRect(0, my(s), W, Math.max(1, PPM*0.06));
   }
-  return mkTex(cA, cR);
+  EMIT = null;
+  return mkTex(cA, cR, cE);
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +251,7 @@ function junctionTexture(R){
   const S = Math.round(CLEAR * PPM);
   const cA = canvas(S, S), g = cA.getContext('2d');
   const cR = canvas(S, S), rg = cR.getContext('2d');
+  const cE = newEmit(S, S);
   const m = (v)=> v * PPM;
   tarmac(g, rg, S, S, R, PPM);
   // junctions are polished by turning traffic -> broad smooth dark centre
@@ -267,13 +275,15 @@ function junctionTexture(R){
     paintRect(g, rg, R, m(0.55), m(2.35), m(CLEAR*0.5 - 0.9), m(0.34), '#e9e7de', 1.0);
   };
   for(let k = 0; k < 4; k++){
-    g.save(); rg.save();
+    g.save(); rg.save(); EMIT.save();
     g.translate(S/2, S/2); g.rotate(k * Math.PI/2); g.translate(-S/2, -S/2);
     rg.translate(S/2, S/2); rg.rotate(k * Math.PI/2); rg.translate(-S/2, -S/2);
+    EMIT.translate(S/2, S/2); EMIT.rotate(k * Math.PI/2); EMIT.translate(-S/2, -S/2);
     edge();
-    g.restore(); rg.restore();
+    g.restore(); rg.restore(); EMIT.restore();
   }
-  return mkTex(cA, cR);
+  EMIT = null;
+  return mkTex(cA, cR, cE);
 }
 
 // ---------------------------------------------------------------------------
@@ -339,12 +349,22 @@ function kerbTexture(R){
   return mkTex(cA, cR);
 }
 
-function mkTex(cA, cR){
+function mkTex(cA, cR, cE){
   const t = new THREE.CanvasTexture(cA);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   const r = new THREE.CanvasTexture(cR);
   r.wrapS = r.wrapT = THREE.RepeatWrapping; r.anisotropy = 4;
-  return { map: t, rough: r };
+  let e = null;
+  if(cE){
+    e = new THREE.CanvasTexture(cE);
+    e.wrapS = e.wrapT = THREE.RepeatWrapping; e.colorSpace = THREE.SRGBColorSpace; e.anisotropy = 4;
+  }
+  return { map: t, rough: r, emis: e };
+}
+function newEmit(W, H){
+  const c = canvas(W, H), g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  EMIT = g; return c;
 }
 
 // arrow decal atlas: 0 = straight, 1 = left turn, 2 = straight+right
