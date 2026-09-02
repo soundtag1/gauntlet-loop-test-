@@ -1,0 +1,13 @@
+<!doctype html><meta charset=utf-8><style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+const r=new THREE.WebGLRenderer({antialias:true});r.setSize(640,360);document.body.appendChild(r.domElement);
+const s=new THREE.Scene();s.background=new THREE.Color(0x0b1026);
+const c=new THREE.PerspectiveCamera(55,640/360,.1,100);c.position.set(3,2,4);c.lookAt(0,0,0);
+s.add(new THREE.AmbientLight(0x404060,2));const d=new THREE.DirectionalLight(0xffaa66,3);d.position.set(5,6,3);s.add(d);
+const m=new THREE.Mesh(new THREE.TorusKnotGeometry(1,.35,128,32),new THREE.MeshStandardMaterial({color:0xff2f8e,metalness:.6,roughness:.25}));s.add(m);
+r.render(s,c);
+window.__ok = r.getContext().getParameter(r.getContext().VERSION) + ' | ' + r.getContext().getParameter(r.getContext().RENDERER);
+document.title='ready';
+</script>

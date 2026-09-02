@@ -1,0 +1,10 @@
+import {chromium} from 'playwright';
+const b=await chromium.launch({args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
+const p=await b.newPage({viewport:{width:640,height:360}});
+p.on('console',m=>console.log('[console]',m.text()));
+p.on('pageerror',e=>console.log('[pageerror]',e.message));
+await p.goto('http://127.0.0.1:5177/public/probe.html',{waitUntil:'networkidle'});
+await p.waitForFunction(()=>window.__ok,null,{timeout:30000}).catch(()=>console.log('no __ok'));
+console.log('GL:', await p.evaluate(()=>window.__ok));
+await p.screenshot({path:'shots/probe.png'});
+await b.close();

@@ -1,0 +1,31 @@
+{
+  "name": "gauntlet-loop-test-",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soundtag1/gauntlet-loop-test-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/soundtag1/gauntlet-loop-test-/issues"
+  },
+  "homepage": "https://github.com/soundtag1/gauntlet-loop-test-#readme",
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.3"
+  },
+  "type": "module"
+}

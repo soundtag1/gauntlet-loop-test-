@@ -1,0 +1,74 @@
+{
+  "wave": 2,
+  "headline": "Wave 2 halted \u2014 session rate limit until 03:50 UTC",
+  "note": "The neon light rig landed and is the biggest single improvement so far: emissive geometry now actually lights the world, so signs pool colour on facades and palms are no longer black cutouts. All specialist agents are then blocked by a session rate limit that resets at 03:50 UTC. The tree is runtime-verified with zero page errors and fully pushed. Every frame below is a real render from the running game.",
+  "agents": [
+    {
+      "name": "Streets",
+      "scope": "src/world/streets.js",
+      "state": "blocked",
+      "detail": "Asphalt, lane markings, crosswalks, puddle reflectance"
+    },
+    {
+      "name": "Neon & Props",
+      "scope": "src/world/props.js",
+      "state": "done",
+      "detail": "Signage, streetlights, light pools, traffic furniture"
+    },
+    {
+      "name": "Architecture",
+      "scope": "src/world/buildings.js, city.js",
+      "state": "done",
+      "detail": "Massing, setbacks, ground-floor retail, facade albedo"
+    },
+    {
+      "name": "Coastline",
+      "scope": "src/world/water.js, vegetation.js",
+      "state": "blocked",
+      "detail": "Ocean shader, sun glitter, shoreline foam, palms"
+    },
+    {
+      "name": "Vehicles",
+      "scope": "src/entities/vehicle.js",
+      "state": "blocked",
+      "detail": "Driving model, suspension, body roll"
+    },
+    {
+      "name": "Traffic & Peds",
+      "scope": "src/systems/traffic.js, peds.js",
+      "state": "blocked",
+      "detail": "Road-following AI, crowd sim"
+    },
+    {
+      "name": "Player & Camera",
+      "scope": "src/entities/player.js, gamecamera.js",
+      "state": "blocked",
+      "detail": "Third-person locomotion, camera weight"
+    },
+    {
+      "name": "Grade & Light",
+      "scope": "src/render/post.js, systems/time.js",
+      "state": "done",
+      "detail": "Bloom balance, tonemap, colour grade"
+    }
+  ],
+  "done": [
+    "Neon light rig: 16-emitter forward loop injected into every material, no extra draw calls",
+    "Emissives now light the world \u2014 signs pool colour on facades, palms no longer black",
+    "Three-stop sky ramp \u2014 dusk finally reads magenta-into-indigo, not flat orange",
+    "Day/golden-hour keys warmed; sun no longer overhead at noon, so shadows read",
+    "Architecture: bright stucco, framed windows with sills, varied massing, shopfront band",
+    "Streets: wet-neon asphalt, night-legible lane paint, crosswalks, junction handling",
+    "Beach camera corrected \u2014 the coast was previously being built entirely unverified",
+    "Independent critic pass: 8 frames scored on 6 axes, root cause found and fixed",
+    "Runtime-verified after 3 concurrent mid-edit agent deaths: 0 page errors"
+  ],
+  "known_gaps": [
+    "AUTO-FAIL on every frame: no vehicles, pedestrians or player \u2014 4 files are still no-op stubs",
+    "Road reflection streak rewrite left half-finished when its agent was cut off",
+    "Coastline still unverified \u2014 its agent died before re-capturing the fixed camera",
+    "Hard horizon seam visible in wide shots; dark specks float in the sky",
+    "Frames skew monochrome pink at dusk; detail is uniform at every scale",
+    "Critic's verdict stands: reads as a diorama, not a real place, until the streets are populated"
+  ]
+}
