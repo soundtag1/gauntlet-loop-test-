@@ -5,6 +5,7 @@ import { TimeOfDay } from './systems/time.js';
 import { City } from './world/city.js';
 import { Buildings } from './world/buildings.js';
 import { buildComposer } from './render/post.js';
+import { NeonRig } from './render/lightrig.js';
 import { Streets } from './world/streets.js';
 import { Props } from './world/props.js';
 import { Water } from './world/water.js';
@@ -85,6 +86,13 @@ export class Game {
     add(Peds,'peds');
     add(Player,'player');
     add(GameCamera,'gamecamera');
+
+    // Emissive geometry must actually light the world around it, or neon reads as
+    // stickers on a dark wall and unlit props (palms) render as black cutouts.
+    this.neon = new NeonRig().discover(this.scene);
+    this.neon.patchScene(this.scene);
+    ctx.neon = this.neon;
+    console.log('[neon rig] emitters discovered:', this.neon.emitters.length);
   }
 
   initPost(){
@@ -117,6 +125,8 @@ export class Game {
         tris:this.renderer.info.render.triangles,
         hour:this.time.hour,
         buildings:this.city.buildings.length,
+        neonEmitters:this.neon?this.neon.emitters.length:0,
+        neonActive:this.neon?this.neon.activeCount:0,
       }),
       ready:true,
     };
@@ -131,6 +141,11 @@ export class Game {
     this.lights.sun.target.updateMatrixWorld();
     this.lights.sun.position.copy(this.lights.sun.target.position)
       .add(this.sky.uniforms.uSunDir.value.clone().multiplyScalar(420));
+    if(this.neon){
+      this.camera.updateMatrixWorld();
+      this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
+      this.neon.update(this.camera, 0.55 + 0.45*this.time.nightFactor);
+    }
     for(const m of this.modules){ try{ m.update(dt, this.ctx); }catch(e){ if(!m.__err){ m.__err=1; console.error('module update failed:', m.constructor.name, e.message); } } }
     if(this.grade) this.grade.uniforms.uTime.value += dt;
     this.composer.render();

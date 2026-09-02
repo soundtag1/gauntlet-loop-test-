@@ -12,7 +12,7 @@ const FRAG = `
 precision highp float;
 varying vec3 vWorld;
 uniform vec3 uSunDir;
-uniform vec3 uZenith, uHorizon, uGround;
+uniform vec3 uZenith, uMid, uHorizon, uGround;
 uniform float uSunIntensity, uHaze, uTime;
 
 float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
@@ -31,9 +31,13 @@ void main(){
   vec3 dir = normalize(vWorld);
   float h = dir.y;
 
-  // vertical atmosphere ramp
-  float t = clamp(h*1.15+0.12, 0.0, 1.0);
-  vec3 sky = mix(uHorizon, uZenith, pow(t, 0.62));
+  // Vertical atmosphere ramp, THREE stops. A two-stop horizon->zenith mix cannot
+  // express a dusk sky (warm horizon -> magenta band -> indigo zenith); the mid
+  // band is what makes sunset read as sunset rather than a flat orange wash.
+  float t = pow(clamp(h*1.15+0.12, 0.0, 1.0), 0.62);
+  vec3 sky = t < 0.5
+    ? mix(uHorizon, uMid,    smoothstep(0.0, 1.0, t*2.0))
+    : mix(uMid,     uZenith, smoothstep(0.0, 1.0, (t-0.5)*2.0));
 
   // ground/haze below horizon
   sky = mix(uGround, sky, smoothstep(-0.10, 0.045, h));
@@ -69,6 +73,7 @@ export class Sky {
     this.uniforms = {
       uSunDir:{value:new THREE.Vector3(0,0.3,-1)},
       uZenith:{value:new THREE.Color(0x2b1e5c)},
+      uMid:{value:new THREE.Color(0xa8447e)},
       uHorizon:{value:new THREE.Color(0xff9a56)},
       uGround:{value:new THREE.Color(0x241a33)},
       uSunIntensity:{value:1.0},

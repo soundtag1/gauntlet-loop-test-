@@ -160,7 +160,7 @@ void main(){
   // --- sky reflection (cheap analytic match to the sky dome shader) --------
   vec3 R = reflect(-V, N);
   float ty = clamp(R.y * 1.15 + 0.12, 0.0, 1.0);
-  vec3 skyC = mix(uHorizon, uZenith, pow(ty, 0.62));
+  vec3 skyC = mix(uHorizon, uZenith, pow(ty, 0.62)) * 0.88;
   // sun/moon glow smeared across the reflected ray
   float sd = max(dot(R, uSpecDir), 0.0);
   skyC += uSpecCol * (pow(sd, 6.0) * 0.30 + pow(sd, 40.0) * 0.55) * uSpecGain;
@@ -275,7 +275,7 @@ void main(){
 
   // ---- lighting ----------------------------------------------------------
   float ndl = max(uSpecDir.y, 0.0);
-  vec3 lit = base * (uAmb + uSunCol * ndl * uSunI * 1.25);
+  vec3 lit = base * (uAmb + uSunCol * ndl * uSunI * 0.82);
 
   // wet sand mirrors the sky at grazing angles
   vec3 V = normalize(uCamPos - vWorld);

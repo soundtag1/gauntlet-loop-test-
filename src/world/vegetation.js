@@ -106,7 +106,7 @@ function buildPalmGeometry(rand){
       const w = W * (0.30 + 0.85 * Math.sin(Math.pow(s, 0.7) * Math.PI)) * taperTip * serr + 0.045;
 
       const g = 0.40 + 0.34 * s + tint;
-      c.setRGB(0.34 * g * 1.30, 0.86 * g, 0.38 * g * 1.05);
+      c.setRGB(0.21 * g * 1.30, 0.54 * g, 0.25 * g * 1.05);
       const sw = 0.42 + 1.15 * Math.pow(s, 1.25);
 
       pos.push(px - side.x * w, py - side.y * w, pz - side.z * w);
@@ -143,7 +143,7 @@ function buildShrubGeometry(){
     const n = 0.78 + 0.35 * Math.abs(Math.sin(x * 5.1 + z * 3.3 + y * 2.2));
     p.setXYZ(i, x * n, Math.max(y, -0.15) * 0.62 * n + 0.42, z * n);
     const up = (y + 1) * 0.5;
-    c.setRGB(0.20 + 0.22 * up, 0.42 + 0.34 * up, 0.20 + 0.16 * up);
+    c.setRGB(0.15 + 0.17 * up, 0.31 + 0.25 * up, 0.16 + 0.12 * up);
     col.push(c.r, c.g, c.b);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -259,7 +259,7 @@ export class Vegetation {
         {
           vec3 vUpF = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
           if (dot(normal, vUpF) < 0.0) normal = -normal;
-          normal = normalize(mix(normal, vUpF, 0.30));
+          normal = normalize(mix(normal, vUpF, 0.18));
         }
       `);
     };
@@ -332,7 +332,7 @@ export class Vegetation {
       const rows = rand.bool(0.34) ? 2 : 1;
       for (let k = 0; k < rows; k++){
         const back = k === 1 ? rand.f(34, 62) : 0;
-        const r = R0 - rand.f(26, 48) - back;
+        const r = R0 - rand.f(46, 82) - back;
         const inner = cityEdge / Math.max(Math.abs(Math.cos(th)), Math.abs(Math.sin(th)));
         if (r < inner + 4) continue;
         const x = Math.cos(th) * r, z = Math.sin(th) * r;
@@ -342,7 +342,7 @@ export class Vegetation {
     }
 
     // (b) boulevard rows — palms marching down the sidewalk verges
-    const PALM_CAP = 420;
+    const PALM_CAP = 360;
     const boulevards = [2, 4, 7, 10, 12];
     for (const bi of boulevards){
       const off = -half + bi * s;
@@ -393,7 +393,7 @@ export class Vegetation {
 
     // ----------------------------------------------------------------- shrubs
     const shrubs = [];
-    for (let i = 0; i < 2600 && shrubs.length < 620; i++){
+    for (let i = 0; i < 2600 && shrubs.length < 500; i++){
       const mode = rand.f(0, 1);
       let x, z;
       if (mode < 0.42){
