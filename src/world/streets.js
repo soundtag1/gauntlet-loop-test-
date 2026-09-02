@@ -132,7 +132,7 @@ function wheelTrack(g, rg, x, W, H, wpx){
 // emissiveMap so markings still read at night (rubric: never flat dead grey).
 let EMIT = null;
 function paintRect(g, rg, R, x, y, w, h, col, wear){
-  if(EMIT){ EMIT.fillStyle = col; EMIT.globalAlpha = 0.85; EMIT.fillRect(x, y, w, h); EMIT.globalAlpha = 1; }
+  if(EMIT){ EMIT.fillStyle = col; EMIT.globalAlpha = 0.70; EMIT.fillRect(x, y, w, h); EMIT.globalAlpha = 1; }
   g.save();
   g.fillStyle = col; g.globalAlpha = 0.92; g.fillRect(x, y, w, h); g.restore();
   // scuff it
@@ -181,13 +181,13 @@ function roadTexture(R){
   }
 
   // --- markings -----------------------------------------------------------
-  const lw = mx(0.17);                                  // line half-thickness
+  const lw = mx(0.11);                                  // line half-thickness
   // solid white edge lines 0.55 m in from each kerb
-  paintRect(g, rg, R, mx(0.55) - lw, 0, lw*2, H, '#e6e4dc', 1.0);
-  paintRect(g, rg, R, mx(CLEAR - 0.55) - lw, 0, lw*2, H, '#e6e4dc', 1.0);
+  paintRect(g, rg, R, mx(0.55) - lw, 0, lw*2, H, '#d4d1c7', 1.0);
+  paintRect(g, rg, R, mx(CLEAR - 0.55) - lw, 0, lw*2, H, '#d4d1c7', 1.0);
   // double-solid amber centre line at 5 m
-  paintRect(g, rg, R, mx(5.0 - 0.26) - lw, 0, lw*2, H, '#e8b53c', 0.85);
-  paintRect(g, rg, R, mx(5.0 + 0.26) - lw, 0, lw*2, H, '#e8b53c', 0.85);
+  paintRect(g, rg, R, mx(5.0 - 0.26) - lw, 0, lw*2, H, '#d6a534', 0.85);
+  paintRect(g, rg, R, mx(5.0 + 0.26) - lw, 0, lw*2, H, '#d6a534', 0.85);
   // dashed white lane hints inside each lane half (period 8 m: 3 m paint / 5 gap)
   for(const lc of [2.5, 7.5]){
     for(let s = 0; s < TILE_LEN; s += 8){
@@ -228,12 +228,12 @@ function roadTextureDashed(R){
     const lc = R.bool() ? 2.5 : 7.5;
     oilStain(g, rg, R, mx(lc + R.f(-0.5,0.5)), R.f(0,H), mx(R.f(0.2,0.8)));
   }
-  const lw = mx(0.17);
-  paintRect(g, rg, R, mx(0.6) - lw, 0, lw*2, H, '#dedbd2', 1.0);
-  paintRect(g, rg, R, mx(CLEAR-0.6) - lw, 0, lw*2, H, '#dedbd2', 1.0);
+  const lw = mx(0.11);
+  paintRect(g, rg, R, mx(0.6) - lw, 0, lw*2, H, '#cfccc2', 1.0);
+  paintRect(g, rg, R, mx(CLEAR-0.6) - lw, 0, lw*2, H, '#cfccc2', 1.0);
   // dashed white centre: 3 m paint, 5 m gap, period 8 m -> tiles at 32 m
   for(let s = 0.5; s < TILE_LEN; s += 8){
-    paintRect(g, rg, R, mx(5.0) - lw, my(s), lw*2, my(3.0), '#e6e4dc', 1.0);
+    paintRect(g, rg, R, mx(5.0) - lw, my(s), lw*2, my(3.0), '#d4d1c7', 1.0);
   }
   for(let s = 4; s < TILE_LEN; s += 8){
     g.fillStyle = 'rgba(12,12,15,0.45)'; g.fillRect(0, my(s), W, Math.max(1, PPM*0.06));
@@ -262,17 +262,35 @@ function junctionTexture(R){
   cgr.addColorStop(0, 'rgba(110,110,110,0.75)'); cgr.addColorStop(1, 'rgba(160,160,160,0)');
   rg.fillStyle = cgr; rg.fillRect(0,0,S,S);
   for(let i = 0; i < 5; i++) oilStain(g, rg, R, R.f(S*0.25,S*0.75), R.f(S*0.25,S*0.75), m(R.f(0.3,1.0)));
+  // Traffic runs straight through as well as turning, so carry the wheel tracks
+  // across in both directions — without them the junction reads lighter than
+  // the road tiles it is butted against.
+  for(const lc of [2.5, 7.5]){
+    wheelTrack(g, rg, m(lc - 0.85), S, S, m(0.55));
+    wheelTrack(g, rg, m(lc + 0.85), S, S, m(0.55));
+  }
+  g.save(); rg.save();
+  g.translate(S/2, S/2); g.rotate(Math.PI/2); g.translate(-S/2, -S/2);
+  rg.translate(S/2, S/2); rg.rotate(Math.PI/2); rg.translate(-S/2, -S/2);
+  for(const lc of [2.5, 7.5]){
+    wheelTrack(g, rg, m(lc - 0.85), S, S, m(0.55));
+    wheelTrack(g, rg, m(lc + 0.85), S, S, m(0.55));
+  }
+  g.restore(); rg.restore();
+  g.fillStyle = 'rgba(18,17,22,0.16)'; g.fillRect(0, 0, S, S);
 
   // one edge's furniture, then rotate 4x for the other approaches
   const edge = ()=>{
     // zebra: 6 bars 0.5 m wide, 1.9 m deep, starting 0.15 m in from the edge
-    for(let i = 0; i < 7; i++){
-      const x = m(0.55 + i * 1.32);
-      if(x + m(0.52) > S - m(0.4)) break;
-      paintRect(g, rg, R, x, m(0.18), m(0.52), m(1.9), '#e9e7de', 1.2);
+    // 0.30 m bars on a 0.95 m pitch — real zebra proportions. Anything wider
+    // reads as toy paint and clips to pure white under bloom.
+    for(let i = 0; i < 11; i++){
+      const x = m(0.50 + i * 0.95);
+      if(x + m(0.30) > S - m(0.35)) break;
+      paintRect(g, rg, R, x, m(0.18), m(0.30), m(2.0), '#cbc7bc', 1.3);
     }
     // stop bar on the approach half only (right-hand traffic)
-    paintRect(g, rg, R, m(0.55), m(2.35), m(CLEAR*0.5 - 0.9), m(0.34), '#e9e7de', 1.0);
+    paintRect(g, rg, R, m(0.50), m(2.45), m(CLEAR*0.5 - 0.95), m(0.28), '#cbc7bc', 1.1);
   };
   for(let k = 0; k < 4; k++){
     g.save(); rg.save(); EMIT.save();
@@ -372,7 +390,7 @@ function arrowTexture(kind){
   const W = 96, H = 192;
   const c = canvas(W, H), g = c.getContext('2d');
   g.clearRect(0,0,W,H);
-  g.fillStyle = 'rgba(233,231,222,0.95)';
+  g.fillStyle = 'rgba(205,201,190,0.95)';
   const shaft = (x0, y0, y1, w)=>{ g.fillRect(x0 - w/2, y0, w, y1 - y0); };
   const head = (cx, ty, hw, hh)=>{ g.beginPath(); g.moveTo(cx, ty); g.lineTo(cx-hw, ty+hh); g.lineTo(cx+hw, ty+hh); g.closePath(); g.fill(); };
   if(kind === 0){
@@ -482,7 +500,7 @@ export class Streets {
     const m = new THREE.MeshStandardMaterial({
       map: tex.map, roughnessMap: tex.rough,
       emissiveMap: tex.emis || null,
-      emissive: tex.emis ? new THREE.Color(0xc8ccd8) : new THREE.Color(0x000000),
+      emissive: tex.emis ? new THREE.Color(0x8f96a6) : new THREE.Color(0x000000),
       emissiveIntensity: tex.emis ? 0.10 : 0.0,
       roughness: opts.roughness !== undefined ? opts.roughness : 1.0,
       metalness: opts.metalness !== undefined ? opts.metalness : 0.04,
@@ -508,6 +526,51 @@ export class Streets {
         .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
         .replace('#include <project_vertex>', '#include <project_vertex>\n  vWPos = (modelMatrix * vec4(transformed,1.0)).xyz;');
 
+      // The NeonRig patches every standard material AFTER modules build, so by
+      // the time this compiles we know whether uNeonPos/uNeonCol exist. Reuse
+      // its uniform block, never redeclare it.
+      const rig = !!(this.ctx && this.ctx.neon);
+      const RIG_BLOCK = `            // ---- colour sourced from the real emitters ------------------
+            // A vertical sign whose ground point is E reflects along the straight
+            // world line camera->E. That axis is FIXED per emitter, so the smear
+            // runs from beneath the sign toward the viewer and projects to a
+            // vertical screen streak. Sampling uNeonPos / uNeonCol (the very
+            // uniforms NeonRig already uploads) means the wet road under a cyan
+            // sign actually reflects cyan.
+            vec3 acc = vec3(0.0);
+            for(int i = 0; i < NEON_MAX; i++){
+              float er = uNeonPos[i].w;
+              if(er <= 0.0) continue;
+              vec3 Ev = uNeonPos[i].xyz;
+              // view -> world for a rigid view matrix: world - cam = R^T * view
+              vec2 Ew = vec2(dot(c0, Ev), dot(c2, Ev));
+              float L = length(Ew);
+              if(L < 2.0) continue;
+              vec2 ax = Ew / L;
+              float t  = dot(rel, ax);
+              float uo = dot(rel, vec2(-ax.y, ax.x));
+              if(t < 0.0 || t > L * 1.10) continue;
+              float wdt = 1.0 + t * 0.30;        // roughness spreads it with range
+              float q = uo / wdt;
+              float g = 1.0 / (1.0 + q * q * 3.0);
+              float sp = t / L;
+              float fall = smoothstep(0.02, 0.34, sp) * (1.0 - smoothstep(0.70, 1.08, sp));
+              float att = 1.0 - clamp(L / (er + 70.0), 0.0, 1.0);
+              acc += uNeonCol[i].rgb * uNeonCol[i].a * (g * fall * att);
+            }
+            acc = min(acc, vec3(2.5));
+            refl += acc * 1.20;
+            lift = 0.50 + 0.90 * min(1.0, acc.r + acc.g + acc.b);`;
+      const FALLBACK_BLOCK = `            // No light rig in this build: fall back to a positional neon hue.
+            vec2 cp = vWPos.xz * 0.045;
+            vec2 ci = floor(cp);
+            float hc = mix(sh21(ci), sh21(ci + vec2(1.0,0.0)), smoothstep(0.0,1.0,fract(cp.x)));
+            vec3 nn = mix(uNeonA, uNeonB, smoothstep(0.22, 0.62, hc));
+            nn = mix(nn, uNeonC, smoothstep(0.84, 0.97, hc));
+            refl += mix(vec3(0.0), mix(nn, vec3(1.0), 0.22), uNight);
+            // without a rig nothing else lights the tarmac, so keep a kerb spill
+            float edge = abs(vMapUv.x - 0.5) * 2.0;
+            gl_FragColor.rgb += nn * (uNight * uSpill * (0.005 + 0.022 * edge * edge));`;
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
         varying vec3 vWPos;
@@ -541,33 +604,30 @@ export class Streets {
           vec3 vdir = cameraPosition - vWPos;
           float dist = length(vdir);
           vdir /= max(dist, 0.001);
-          // grazing-angle fresnel: exponent 2 so the sheen reaches the near road
+          // grazing-angle fresnel, so the sheen reaches the near road too
           float fres = pow(1.0 - clamp(vdir.y, 0.0, 1.0), 3.0);
-          // Neon hue for this stretch of street — smooth, slowly drifting.
-          vec2 cp = vWPos.xz * 0.045;
-          vec2 ci = floor(cp);
-          float hc = mix(sh21(ci), sh21(ci + vec2(1.0, 0.0)), smoothstep(0.0, 1.0, fract(cp.x)));
-          vec3 neon = mix(uNeonA, uNeonB, smoothstep(0.22, 0.62, hc));
-          neon = mix(neon, uNeonC, smoothstep(0.84, 0.97, hc));   // amber is rare
-          neon = mix(neon, vec3(1.0), 0.22);
-          // Shopfront neon spills onto the tarmac: strongest at the kerb line,
-          // so the road is never a dead black slab at night (rubric 1 & 2).
-          float edge = abs(vMapUv.x - 0.5) * 2.0;
-          gl_FragColor.rgb += neon * (uNight * uSpill * (0.005 + 0.022 * edge * edge));
           float sheen = (0.04 + 0.96 * wetA) * fres;
-          // hard early-out keeps the streak noise off near-vertical / far road
           if(sheen > 0.05 && dist < 400.0){
-            vec2 fwd = normalize(vWPos.xz - cameraPosition.xz + vec2(1e-4));
-            vec2 sid = vec2(-fwd.y, fwd.x);
-            float along  = dot(vWPos.xz, fwd);
-            float across = dot(vWPos.xz, sid);
-            // widen the streaks with distance so they never alias into a comb
+            // ---- FIXED streak basis ------------------------------------
+            // Built from the VIEW MATRIX, so it is constant across the whole
+            // frame. Deriving it per-pixel from the view vector rotates the
+            // noise basis across the screen and the streaks sweep out
+            // concentric arcs (polar noise) instead of running down the road.
+            vec3 c0 = viewMatrix[0].xyz, c1 = viewMatrix[1].xyz, c2 = viewMatrix[2].xyz;
+            vec2 F = normalize(vec2(-c0.z, -c2.z) + vec2(1e-5));  // camera fwd, on the ground
+            vec2 S = vec2(-F.y, F.x);
+            vec2 rel = vWPos.xz - cameraPosition.xz;
+            float along  = dot(vWPos.xz, F);
+            float across = dot(vWPos.xz, S);
+            // widen with distance so the streaks never alias into a comb
             float w = 1.0 / (1.0 + dist * 0.030);
             float st = svn(vec2(across*1.6*w, along*0.028))*0.64
                      + svn(vec2(across*5.4*w, along*0.075))*0.36;
             st = smoothstep(0.42, 0.93, st);   // sparse streaks, dark road between
-            vec3 refl = mix(uSkyCol * 0.42, neon, uNight);
-            float amp = sheen * st * (0.38 + 0.70 * uNight);
+            vec3 refl = uSkyCol * 0.30 * (1.0 - uNight);
+            float lift = 1.0;
+${ rig ? RIG_BLOCK : FALLBACK_BLOCK }
+            float amp = sheen * st * (0.42 + 0.28 * uNight) * lift;
             amp *= smoothstep(0.05, 0.16, sheen);
             amp *= 1.0 - smoothstep(230.0, 395.0, dist);
             amp *= mix(0.5, 1.0, smoothstep(3.0, 36.0, dist));
@@ -820,7 +880,7 @@ export class Streets {
       this.U.uSkyCol.value.copy(c.sky.uniforms.uHorizon.value);
     }
     // retro-reflective paint: barely there by day, clearly legible at night
-    const ei = 0.05 + 0.55 * nf;
+    const ei = 0.03 + 0.24 * nf;
     for(let i = 0; i < this.paintMats.length; i++) this.paintMats[i].emissiveIntensity = ei;
   }
 }

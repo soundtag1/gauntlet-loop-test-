@@ -21,7 +21,7 @@ export class NeonRig {
     this.uniforms = {
       uNeonPos:{ value: Array.from({length:NEON_MAX}, ()=>new THREE.Vector4(0,0,0,0)) },
       uNeonCol:{ value: Array.from({length:NEON_MAX}, ()=>new THREE.Vector4(0,0,0,0)) },
-      uNeonBoost:{ value: 1.0 },
+      uNeonBoost:{ value: 0.34 },
     };
     this._v = new THREE.Vector3();
     this._m = new THREE.Matrix4();
@@ -58,12 +58,12 @@ export class NeonRig {
             m4.premultiply(obj.matrixWorld);
             pos.setFromMatrixPosition(m4);
             const sc = Math.max(m4.elements[0], m4.elements[5], m4.elements[10]) || 1;
-            this.add(pos, e, str, Math.max(12, bs.radius*sc*3.2));
+            this.add(pos, e, Math.min(str, 1.4), Math.max(8, Math.min(bs.radius*sc*1.7, 34)));
           }
         } else {
           obj.getWorldPosition(pos);
           const sc = obj.getWorldScale(this._v).length() || 1;
-          this.add(pos, e, str, Math.max(12, bs.radius*sc*2.4));
+          this.add(pos, e, Math.min(str, 1.4), Math.max(8, Math.min(bs.radius*sc*1.4, 34)));
         }
       }
     });
@@ -100,12 +100,14 @@ export class NeonRig {
               float dist = length(d);
               if(dist > r) continue;
               float att = 1.0 - dist / r;
-              att *= att;
+              att = att * att * att;              // tighter falloff: light stays near its source
               // wrap diffuse: signage spills onto faces turned away from it too,
               // which is what makes neon read as ambient city light rather than a lamp
               float ndl = dot(N, d / max(dist, 1e-4));
               float wrap = clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
-              acc += uNeonCol[i].rgb * uNeonCol[i].a * att * (0.28 + 0.72 * wrap);
+              // Low floor: a face turned away from a sign should stay dark, or the
+              // whole street washes out into flat daylight.
+              acc += uNeonCol[i].rgb * uNeonCol[i].a * att * (0.05 + 0.95 * wrap * wrap);
             }
             reflectedLight.directDiffuse += acc * diffuseColor.rgb * uNeonBoost;
           }`);

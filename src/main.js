@@ -144,7 +144,7 @@ export class Game {
     if(this.neon){
       this.camera.updateMatrixWorld();
       this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
-      this.neon.update(this.camera, 0.55 + 0.45*this.time.nightFactor);
+      this.neon.update(this.camera, 0.30 + 0.70*this.time.nightFactor);
     }
     for(const m of this.modules){ try{ m.update(dt, this.ctx); }catch(e){ if(!m.__err){ m.__err=1; console.error('module update failed:', m.constructor.name, e.message); } } }
     if(this.grade) this.grade.uniforms.uTime.value += dt;
