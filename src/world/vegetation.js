@@ -72,17 +72,24 @@ function buildPalmGeometry(rand){
   for (const f of CF) pushTri(idx, crownBase + f[0], crownBase + f[1], crownBase + f[2]);
 
   // ---- fronds ------------------------------------------------------------
-  const NF = 8, RIB = 7;
+  // Each frond is a V-folded strip: a raised centre rib with the two halves
+  // falling away, so the leaf self-shades and reads as form rather than a flat
+  // black cutout in silhouette.
+  const NF = 9, RIB = 6;
   const side = new THREE.Vector3(), dir = new THREE.Vector3(), nrm = new THREE.Vector3();
+  const nL = new THREE.Vector3(), nR = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
   for (let k = 0; k < NF; k++){
-    const az = (k / NF) * TAU + rand.f(-0.16, 0.16);
-    const L = rand.f(4.5, 5.9);
-    const droop = rand.f(1.35, 1.85);
-    const lift = rand.f(0.55, 0.95);
-    const roll = rand.f(-0.45, 0.45);
-    const W = rand.f(0.82, 1.12);
-    const tint = rand.f(-0.10, 0.12);
+    const young = k >= 6;                       // shorter, more upright inner fronds
+    const az = young ? (k - 6) / 3 * TAU + 0.9 + rand.f(-0.2, 0.2)
+                     : (k / 6) * TAU + rand.f(-0.16, 0.16);
+    const L = young ? rand.f(2.5, 3.4) : rand.f(4.6, 6.1);
+    const droop = young ? rand.f(0.55, 0.85) : rand.f(1.30, 1.95);
+    const lift = young ? rand.f(1.35, 1.75) : rand.f(0.50, 1.00);
+    const roll = rand.f(-0.42, 0.42);
+    const W = young ? rand.f(0.50, 0.70) : rand.f(0.80, 1.16);
+    const tint = rand.f(-0.16, 0.16) + (young ? 0.12 : 0);
+    const fold = rand.f(0.30, 0.50);
     const ca = Math.cos(az), sa = Math.sin(az);
     const start = pos.length / 3;
 
@@ -93,31 +100,43 @@ function buildPalmGeometry(rand){
       const hy = L * (lift * s - droop * s * s) * 0.62;
       const px = top.x + ca * hx, py = top.y + hy + 0.35, pz = top.z + sa * hx;
 
-      // tangent for the leaf normal
       dir.set(ca, (lift - 2 * droop * s) * 0.62, sa).normalize();
       side.set(-sa, 0, ca);
       side.multiplyScalar(Math.cos(roll)).addScaledVector(up, Math.sin(roll)).normalize();
       nrm.crossVectors(side, dir).normalize();
       if (nrm.y < 0) nrm.multiplyScalar(-1);
+      nL.copy(nrm).addScaledVector(side, -0.55).normalize();
+      nR.copy(nrm).addScaledVector(side, 0.55).normalize();
 
       // serrated width -> the ragged silhouette of a palm frond
       const taperTip = Math.pow(1.0 - s, 0.55);
-      const serr = 0.52 + 0.48 * Math.abs(Math.sin(s * Math.PI * 4.0));
+      const serr = 0.50 + 0.50 * Math.abs(Math.sin(s * Math.PI * 4.0));
       const w = W * (0.30 + 0.85 * Math.sin(Math.pow(s, 0.7) * Math.PI)) * taperTip * serr + 0.045;
+      const h = fold * w;                        // how far the centre rib is raised
 
       const g = 0.40 + 0.34 * s + tint;
-      c.setRGB(0.21 * g * 1.30, 0.54 * g, 0.25 * g * 1.05);
+      const cm = 1.0;
       const sw = 0.42 + 1.15 * Math.pow(s, 1.25);
 
+      // left edge
+      c.setRGB(0.21 * g * 1.30 * 0.82, 0.54 * g * 0.82, 0.25 * g * 1.05 * 0.82);
       pos.push(px - side.x * w, py - side.y * w, pz - side.z * w);
+      nor.push(nL.x, nL.y, nL.z); col.push(c.r, c.g, c.b); sway.push(sw);
+      // raised centre rib (brighter — catches the sky)
+      c.setRGB(0.21 * g * 1.30 * cm, 0.54 * g * cm, 0.25 * g * 1.05 * cm);
+      pos.push(px + nrm.x * h, py + nrm.y * h, pz + nrm.z * h);
       nor.push(nrm.x, nrm.y, nrm.z); col.push(c.r, c.g, c.b); sway.push(sw);
+      // right edge
+      c.setRGB(0.21 * g * 1.30 * 0.90, 0.54 * g * 0.90, 0.25 * g * 1.05 * 0.90);
       pos.push(px + side.x * w, py + side.y * w, pz + side.z * w);
-      nor.push(nrm.x, nrm.y, nrm.z); col.push(c.r, c.g, c.b); sway.push(sw);
+      nor.push(nR.x, nR.y, nR.z); col.push(c.r, c.g, c.b); sway.push(sw);
     }
     for (let j = 0; j < RIB; j++){
-      const a = start + j * 2, b = a + 2;
-      pushTri(idx, a, b, a + 1);
-      pushTri(idx, b, b + 1, a + 1);
+      const a0 = start + j * 3, b0 = a0 + 3;
+      pushTri(idx, a0, b0, a0 + 1);
+      pushTri(idx, b0, b0 + 1, a0 + 1);
+      pushTri(idx, a0 + 1, b0 + 1, a0 + 2);
+      pushTri(idx, b0 + 1, b0 + 2, a0 + 2);
     }
   }
 
@@ -202,6 +221,137 @@ function buildPotGeometry(){
       pushTri(idx, a0, b0, a0 + 1);
       pushTri(idx, b0, b0 + 1, a0 + 1);
     }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('aSway', new THREE.Float32BufferAttribute(sway, 1));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
+}
+
+// --- beach umbrella: 12 panelled canopy with a scalloped drooping rim -------
+function buildUmbrellaGeometry(){
+  const pos = [], nor = [], col = [], sway = [], idx = [];
+  const c = new THREE.Color();
+  const N = 12, R = 2.15, poleH = 3.15;
+  const h0 = poleH, h1 = poleH - 0.30, h2 = poleH - 0.88;
+
+  // pole
+  const pr = 0.055, base = 0;
+  for (let ring = 0; ring < 2; ring++){
+    const y = ring ? poleH + 0.10 : 0;
+    for (let i = 0; i < 6; i++){
+      const a = (i / 6) * TAU;
+      pos.push(Math.cos(a) * pr, y, Math.sin(a) * pr);
+      nor.push(Math.cos(a), 0.1, Math.sin(a));
+      c.setHex(0xcfc6b4).multiplyScalar(ring ? 1.0 : 0.66);
+      col.push(c.r, c.g, c.b);
+      sway.push(ring ? 0.05 : 0);
+    }
+  }
+  for (let i = 0; i < 6; i++){
+    const i2 = (i + 1) % 6;
+    pushTri(idx, base + i, base + 6 + i, base + i2);
+    pushTri(idx, base + 6 + i, base + 6 + i2, base + i2);
+  }
+
+  // canopy — each panel gets its own vertices so the colours stay crisp
+  const PAL = [0xf2f0ea, 0xe2564f, 0xf2f0ea, 0x2fa8b8, 0xf2f0ea, 0xf0a83c];
+  for (let k = 0; k < N; k++){
+    const a0 = (k / N) * TAU, a1 = ((k + 1) / N) * TAU, am = (a0 + a1) * 0.5;
+    const P = (r, a, y) => { pos.push(Math.cos(a) * r, y, Math.sin(a) * r); };
+    const st = pos.length / 3;
+    const tone = PAL[k % PAL.length];
+    P(0, a0, h0);                       // 0 apex
+    P(0.50 * R, a0, h1);                // 1 rib mid
+    P(0.53 * R, am, h1 - 0.10);         // 2 sag mid
+    P(0.50 * R, a1, h1);                // 3 rib mid
+    P(R, a0, h2);                       // 4 rib tip
+    P(1.03 * R, am, h2 - 0.30);         // 5 scallop droop
+    P(R, a1, h2);                       // 6 rib tip
+    for (let v = 0; v < 7; v++){
+      nor.push(0, 1, 0);
+      // ribs slightly darker than the sagging fabric between them: reads as
+      // panels rather than one flat disc
+      const ribby = (v === 0 || v === 1 || v === 3 || v === 4 || v === 6) ? 0.86 : 1.0;
+      c.setHex(tone).multiplyScalar(ribby);
+      col.push(c.r, c.g, c.b);
+      sway.push(v >= 4 ? 0.16 : 0.07);
+    }
+    pushTri(idx, st + 0, st + 1, st + 2); pushTri(idx, st + 0, st + 2, st + 3);
+    pushTri(idx, st + 1, st + 4, st + 5); pushTri(idx, st + 1, st + 5, st + 2);
+    pushTri(idx, st + 2, st + 5, st + 6); pushTri(idx, st + 2, st + 6, st + 3);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('aSway', new THREE.Float32BufferAttribute(sway, 1));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}
+
+// --- sun lounger: slatted seat + raised back on short legs ------------------
+function buildLoungerGeometry(){
+  const pos = [], nor = [], col = [], sway = [], idx = [];
+  const c = new THREE.Color();
+  const box = (cx, cy, cz, w, h, d, hex, pitch = 0) => {
+    const st = pos.length / 3;
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const P = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+    for (const [x, y, z] of P){
+      const lx = x * w * 0.5, ly = y * h * 0.5, lz = z * d * 0.5;
+      // pitch about X so the backrest can lean
+      const ry = ly * cp - lz * sp, rz = ly * sp + lz * cp;
+      pos.push(cx + lx, cy + ry, cz + rz);
+      nor.push(x, y, z);
+      c.setHex(hex); col.push(c.r, c.g, c.b);
+      sway.push(0);
+    }
+    const F = [[0,1,2],[0,2,3],[5,4,7],[5,7,6],[4,0,3],[4,3,7],[1,5,6],[1,6,2],[3,2,6],[3,6,7],[4,5,1],[4,1,0]];
+    for (const f of F) pushTri(idx, st + f[0], st + f[1], st + f[2]);
+  };
+  const frame = 0xe8e4dc, fabric = 0xdfe6ea;
+  box(0, 0.20, 0, 0.10, 0.40, 1.75, frame);            // side rails
+  box(0, 0.20, 0, 0.60, 0.36, 0.10, frame);
+  box(0, 0.44, -0.12, 0.62, 0.09, 1.45, fabric);       // seat pad
+  box(0, 0.74, 0.62, 0.62, 0.09, 0.86, fabric, -0.72); // raised back
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('aSway', new THREE.Float32BufferAttribute(sway, 1));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}
+
+// --- beach towel: a striped rectangle lying on the sand ---------------------
+function buildTowelGeometry(){
+  const pos = [], nor = [], col = [], sway = [], idx = [];
+  const c = new THREE.Color();
+  const STR = 5, W = 0.95, L = 1.9;
+  for (let i = 0; i <= STR; i++){
+    const t = i / STR;
+    for (const sgn of [-1, 1]){
+      pos.push(sgn * W * 0.5, 0, (t - 0.5) * L);
+      nor.push(0, 1, 0);
+      c.setHex(i % 2 ? 0xf0f0ea : 0xe0564f);
+      col.push(c.r, c.g, c.b);
+      sway.push(0);
+    }
+  }
+  for (let i = 0; i < STR; i++){
+    const a = i * 2, b = a + 2;
+    pushTri(idx, a, b, a + 1);
+    pushTri(idx, b, b + 1, a + 1);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
