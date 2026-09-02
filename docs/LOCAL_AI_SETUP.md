@@ -27,6 +27,17 @@ under `neoncoast.ai`. Nothing is committed to the repo.
 Per NPC you can set model, voice id, temperature and system prompt in the same
 panel; defaults ship in `src/systems/dialogue.js`.
 
+### Model choice
+The `model` string is passed straight through to your endpoint, so it must match
+whatever you have pulled locally (e.g. `ollama pull qwen3:8b` -> `qwen3:8b`).
+
+Default is **Qwen3**, chosen for one concrete reason: these NPCs depend on tool
+calling — the teller genuinely invokes `get_balance` and `deposit` — and Qwen3 has
+strong native tool-call support. **Gemma** works too and is a single field change;
+if your Gemma build has weaker tool-call support, expect the conversation to feel
+fine while the NPC fails to actually move money, which is the failure mode to watch
+for. Anything OpenAI-compatible is accepted — nothing in the game is Qwen-specific.
+
 ## Endpoint 1 — STT
 `POST {sttUrl}`, `multipart/form-data`, field `audio` (webm/opus or wav).
 ```json
