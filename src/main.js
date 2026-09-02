@@ -12,6 +12,7 @@ import { Water } from './world/water.js';
 import { Vegetation } from './world/vegetation.js';
 import { Interiors } from './world/interiors.js';
 import { Economy } from './systems/economy.js';
+import { Dialogue } from './systems/dialogue.js';
 import { Vehicles } from './entities/vehicle.js';
 import { Player } from './entities/player.js';
 import { Traffic } from './systems/traffic.js';
@@ -88,6 +89,7 @@ export class Game {
     add(Traffic,'traffic');
     add(Peds,'peds');
     add(Economy,'economy');
+    add(Dialogue,'dialogue');
     add(Player,'player');
     add(GameCamera,'gamecamera');
 
