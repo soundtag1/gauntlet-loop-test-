@@ -277,7 +277,7 @@ export class Vehicles {
     });
 
     // fleet composition — sedans dominate, a handful of buses
-    const COUNT = 84;
+    const COUNT = 96;
     const mix = [0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 0, 1, 0, 4];
     const perType = [0, 0, 0, 0, 0];
     for (let k = 0; k < COUNT; k++){

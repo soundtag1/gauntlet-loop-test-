@@ -622,13 +622,113 @@ export class Vegetation {
     this.group.add(potMesh);
     this.pots = potMesh;
 
+    // ------------------------------------------------------- beach furniture
+    // Clusters of parasols, loungers and towels on the dry sand of the beach
+    // district, so the shore reads as a place people go rather than a plane.
+    const umbrellas = [], loungers = [], towels = [];
+    for (let th = 0.62; th < 2.52; th += 0.050){
+      if (!rand.bool(0.80)) continue;
+      const R0 = shoreAt(th);
+      const inner = cityEdge / Math.max(Math.abs(Math.cos(th)), Math.abs(Math.sin(th)));
+      const r = R0 - rand.f(38, 92);
+      if (r < inner + 8) continue;
+      const cx = Math.cos(th) * r, cz = Math.sin(th) * r;
+      if (city.isRoad(cx, cz) || this.blocked(cx, cz, 2.0)) continue;
+      const nU = rand.i(1, 2);
+      for (let i = 0; i < nU; i++){
+        const ox = rand.f(-4.5, 4.5), oz = rand.f(-4.5, 4.5);
+        umbrellas.push({ x: cx + ox, z: cz + oz,
+          sc: rand.f(0.82, 1.22), tilt: rand.f(0.05, 0.26), yaw: rand.f(0, TAU),
+          furled: rand.bool(0.20) });
+      }
+      const nL = rand.i(0, 2);
+      for (let i = 0; i < nL; i++){
+        loungers.push({ x: cx + rand.f(-5.5, 5.5), z: cz + rand.f(-5.5, 5.5),
+          sc: rand.f(0.92, 1.10), yaw: th + Math.PI * 0.5 + rand.f(-0.5, 0.5) });
+      }
+      if (rand.bool(0.55)){
+        towels.push({ x: cx + rand.f(-6, 6), z: cz + rand.f(-6, 6),
+          sc: rand.f(0.9, 1.25), yaw: th + Math.PI * 0.5 + rand.f(-0.7, 0.7) });
+      }
+    }
+
+    // umbrellas get their own material so the fabric can glow warm at dusk
+    const umbMat = this.makeMat(0.45, THREE.DoubleSide);
+    umbMat.emissive = new THREE.Color(0x000000);
+    this.umbMat = umbMat;
+    const umbGeo = buildUmbrellaGeometry();
+    const umbMesh = new THREE.InstancedMesh(umbGeo, umbMat, umbrellas.length);
+    umbMesh.castShadow = true;
+    umbMesh.frustumCulled = false;
+    const uPhase = new Float32Array(umbrellas.length);
+    umbrellas.forEach((u, i) => {
+      const leanDir = rand.f(0, TAU);
+      e.set(Math.cos(leanDir) * u.tilt, u.yaw, Math.sin(leanDir) * u.tilt, 'YXZ');
+      q.setFromEuler(e);
+      if (u.furled) sv.set(u.sc * 0.17, u.sc * 1.12, u.sc * 0.17);
+      else sv.set(u.sc * rand.f(0.95, 1.06), u.sc, u.sc * rand.f(0.95, 1.06));
+      pv.set(u.x, this.groundY(u.x, u.z) - 0.05, u.z);
+      m4.compose(pv, q, sv);
+      umbMesh.setMatrixAt(i, m4);
+      uPhase[i] = rand.f(0, TAU);
+    });
+    umbMesh.instanceMatrix.needsUpdate = true;
+    umbGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(uPhase, 1));
+    this.group.add(umbMesh);
+    this.umbrellas = umbMesh;
+
+    const furnMat = this.makeMat(0.0, THREE.FrontSide);
+    const lounGeo = buildLoungerGeometry();
+    const lounMesh = new THREE.InstancedMesh(lounGeo, furnMat, loungers.length);
+    lounMesh.castShadow = true;
+    lounMesh.frustumCulled = false;
+    const lPhase = new Float32Array(loungers.length);
+    loungers.forEach((l, i) => {
+      q.setFromEuler(e.set(0, l.yaw, 0, 'YXZ'));
+      sv.setScalar(l.sc);
+      pv.set(l.x, this.groundY(l.x, l.z), l.z);
+      m4.compose(pv, q, sv);
+      lounMesh.setMatrixAt(i, m4);
+      lPhase[i] = 0;
+    });
+    lounMesh.instanceMatrix.needsUpdate = true;
+    lounGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(lPhase, 1));
+    this.group.add(lounMesh);
+    this.loungers = lounMesh;
+
+    const towGeo = buildTowelGeometry();
+    const towMesh = new THREE.InstancedMesh(towGeo, furnMat, Math.max(towels.length, 1));
+    towMesh.frustumCulled = false;
+    const tPhase = new Float32Array(Math.max(towels.length, 1));
+    towels.forEach((t, i) => {
+      q.setFromEuler(e.set(0, t.yaw, 0, 'YXZ'));
+      sv.setScalar(t.sc);
+      pv.set(t.x, this.groundY(t.x, t.z) + 0.035, t.z);
+      m4.compose(pv, q, sv);
+      towMesh.setMatrixAt(i, m4);
+    });
+    towMesh.count = towels.length;
+    towMesh.instanceMatrix.needsUpdate = true;
+    towGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(tPhase, 1));
+    this.group.add(towMesh);
+    this.towels = towMesh;
+
     this.counts = { palms: palms.length, shrubs: shrubs.length, pots: pots.length,
+      umbrellas: umbrellas.length, loungers: loungers.length, towels: towels.length,
       tris: (palmGeo.index.count / 3) * palms.length + (shrubGeo.index ? shrubGeo.index.count / 3 : 20) * shrubs.length + (potGeo.index.count / 3) * pots.length };
     return this;
   }
 
-  update(dt){
+  update(dt, ctx){
     this.t += dt;
     this.uTime.value = this.t;
+    // Umbrella fabric is thin: let a little of the sky punch through it so the
+    // canopies glow instead of going flat black against a bright dusk.
+    const c = ctx || this.ctx;
+    if (this.umbMat && c && c.sky){
+      const hor = c.sky.uniforms.uHorizon.value;
+      const si = c.sky.uniforms.uSunIntensity.value;
+      this.umbMat.emissive.copy(hor).multiplyScalar(0.030 + 0.085 * Math.min(si, 1.2));
+    }
   }
 }
