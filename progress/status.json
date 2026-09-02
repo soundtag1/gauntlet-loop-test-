@@ -1,18 +1,18 @@
 {
   "wave": 2,
-  "headline": "Architecture landed \u2014 bright facades, varied massing, landmark towers",
-  "note": "The facade defect is fixed: walls now read as lit stucco with framed windows, and the skyline has real silhouette variety. Streets and Coastline are still building. Two infrastructure bugs were found and fixed this wave \u2014 a stale web server was serving old code to screenshots, and the capture harness was aborting on slow frames. Both would have quietly corrupted the review loop.",
+  "headline": "Wave 2 halted \u2014 session rate limit until 03:50 UTC",
+  "note": "The neon light rig landed and is the biggest single improvement so far: emissive geometry now actually lights the world, so signs pool colour on facades and palms are no longer black cutouts. All specialist agents are then blocked by a session rate limit that resets at 03:50 UTC. The tree is runtime-verified with zero page errors and fully pushed. Every frame below is a real render from the running game.",
   "agents": [
     {
       "name": "Streets",
       "scope": "src/world/streets.js",
-      "state": "running",
+      "state": "blocked",
       "detail": "Asphalt, lane markings, crosswalks, puddle reflectance"
     },
     {
       "name": "Neon & Props",
       "scope": "src/world/props.js",
-      "state": "paused",
+      "state": "done",
       "detail": "Signage, streetlights, light pools, traffic furniture"
     },
     {
@@ -24,52 +24,51 @@
     {
       "name": "Coastline",
       "scope": "src/world/water.js, vegetation.js",
-      "state": "running",
+      "state": "blocked",
       "detail": "Ocean shader, sun glitter, shoreline foam, palms"
     },
     {
       "name": "Vehicles",
       "scope": "src/entities/vehicle.js",
-      "state": "queued",
+      "state": "blocked",
       "detail": "Driving model, suspension, body roll"
     },
     {
       "name": "Traffic & Peds",
       "scope": "src/systems/traffic.js, peds.js",
-      "state": "queued",
+      "state": "blocked",
       "detail": "Road-following AI, crowd sim"
     },
     {
       "name": "Player & Camera",
       "scope": "src/entities/player.js, gamecamera.js",
-      "state": "queued",
+      "state": "blocked",
       "detail": "Third-person locomotion, camera weight"
     },
     {
       "name": "Grade & Light",
       "scope": "src/render/post.js, systems/time.js",
-      "state": "queued",
+      "state": "done",
       "detail": "Bloom balance, tonemap, colour grade"
     }
   ],
   "done": [
-    "WebGL2 verified under headless software rendering",
-    "Atmospheric sky: gradient ramp, sun disc, fbm clouds, aerial perspective",
-    "Time-of-day across a 10-key 24h ramp driving sun, sky, fog",
-    "Bright stucco facades with mullions, transoms, sills and shopfront ground floors",
-    "Varied massing: podium+tower, setbacks, L/U plans, landmark crowns and spires",
-    "Neon signage: legible shapes, colour-normalised emissive, light pools on road",
-    "Wet-asphalt streak reflections and kerb detail",
-    "Bloom retuned (0.40/0.48/0.86) \u2014 magenta flood eliminated",
-    "Capture harness hardened: 240s timeout, survives slow frames, always writes a manifest",
-    "Fixed a stale second web server that was serving old code to screenshots"
+    "Neon light rig: 16-emitter forward loop injected into every material, no extra draw calls",
+    "Emissives now light the world \u2014 signs pool colour on facades, palms no longer black",
+    "Three-stop sky ramp \u2014 dusk finally reads magenta-into-indigo, not flat orange",
+    "Day/golden-hour keys warmed; sun no longer overhead at noon, so shadows read",
+    "Architecture: bright stucco, framed windows with sills, varied massing, shopfront band",
+    "Streets: wet-neon asphalt, night-legible lane paint, crosswalks, junction handling",
+    "Beach camera corrected \u2014 the coast was previously being built entirely unverified",
+    "Independent critic pass: 8 frames scored on 6 axes, root cause found and fixed",
+    "Runtime-verified after 3 concurrent mid-edit agent deaths: 0 page errors"
   ],
   "known_gaps": [
-    "Noon reads cool \u2014 sun sits near-vertical, so walls get only grazing light",
-    "Lane paint still invisible at night; asphalt flat under neon (in progress)",
-    "Shopfront bay pattern repeats every 18m on long blocks",
-    "Palms still completely absent \u2014 vegetation module is an empty stub",
-    "No vehicles, pedestrians or player character in the world yet",
-    "Scene is near the software-rasterisation ceiling; heavy frames take ~30s each"
+    "AUTO-FAIL on every frame: no vehicles, pedestrians or player \u2014 4 files are still no-op stubs",
+    "Road reflection streak rewrite left half-finished when its agent was cut off",
+    "Coastline still unverified \u2014 its agent died before re-capturing the fixed camera",
+    "Hard horizon seam visible in wide shots; dark specks float in the sky",
+    "Frames skew monochrome pink at dusk; detail is uniform at every scale",
+    "Critic's verdict stands: reads as a diorama, not a real place, until the streets are populated"
   ]
 }
