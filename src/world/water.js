@@ -126,7 +126,7 @@ float vnoise(vec2 p){
 // analytic wave normal — sum of directional sines, no derivatives needed
 vec3 waveNormal(vec2 p, float t, float fade){
   vec2 g = vec2(0.0);
-  float wob = vnoise(p * 0.0021) * 6.28;      // slow phase wander
+  float wob = (vnoise(p * 0.0021) + vnoise(p * 0.0072) * 0.5) * 6.28;
   float wob2 = vnoise(p * 0.0085 + 11.3) * 6.28;
   // long directional swell rolling towards the beach (+Z)
   vec2 d1 = normalize(vec2(0.18, 1.0));
@@ -137,10 +137,10 @@ vec3 waveNormal(vec2 p, float t, float fade){
   g += d2 * (a2 * k2 * cos(dot(d2, p) * k2 - t * 0.95 + wob2));
   // chop
   vec2 d3 = normalize(vec2(0.92, -0.38));
-  float k3 = 0.108, a3 = 0.30;
+  float k3 = 0.108, a3 = 0.22;
   g += fade * d3 * (a3 * k3 * cos(dot(d3, p) * k3 + t * 2.1 + wob2 * 1.7));
   vec2 d4 = normalize(vec2(0.35, 0.94));
-  float k4 = 0.205, a4 = 0.115;
+  float k4 = 0.205, a4 = 0.085;
   g += fade * d4 * (a4 * k4 * cos(dot(d4, p) * k4 - t * 3.3 + wob * 2.3));
   // fine ripple, drives the glitter sparkle (rotated dirs, never axis-aligned)
   vec2 d5 = normalize(vec2(0.62, 0.79));
@@ -176,7 +176,7 @@ void main(){
   // fresnel — damped in the shallows so the water keeps its teal there
   float f = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);
   f = clamp(0.026 + 0.974 * f, 0.0, 1.0);
-  f *= mix(0.46, 1.0, smoothstep(0.0, 340.0, vShore));
+  f *= mix(0.68, 1.0, smoothstep(0.0, 340.0, vShore));
   vec3 col = mix(body, skyC, f);
 
   // --- specular glitter track --------------------------------------------
@@ -192,7 +192,16 @@ void main(){
   sp = pow(clamp(sp * 3.4, 0.0, 1.0), 1.35);
   float glint = sharp * (0.18 + 4.2 * sp * fade);
   float wide = pow(ndh, 5.0);
-  col += uSpecCol * uSpecGain * (glint * 3.0 + broad * 0.22 + wide * 0.10);
+  col += uSpecCol * uSpecGain * (glint * 3.4 + broad * 0.26 + wide * 0.12);
+
+  // Glitter track from the bright horizon band: wherever a wave facet throws the
+  // view ray out along the horizon it picks up the sunset glow, and the sparkle
+  // noise breaks that into thousands of individual glints running to the viewer.
+  float horiz = 1.0 - clamp(abs(R.y) * 6.5, 0.0, 1.0);
+  horiz *= horiz;
+  float track = 0.35 + 0.65 * pow(max(dot(normalize(vec3(R.x, 0.0, R.z)),
+                                          normalize(vec3(uSpecDir.x, 0.0, uSpecDir.z))) * 0.5 + 0.5, 0.0), 1.5);
+  col += uHorizon * horiz * f * track * (0.22 + 2.3 * sp * fade) * uSpecGain * 0.55;
 
   // --- shoreline foam -----------------------------------------------------
   float d = vShore - 12.0;                        // metres seaward of waterline
@@ -211,7 +220,10 @@ void main(){
   float swash = 6.5 * sin(uTime * 0.55 + vWorld.x * 0.010)
               + 4.0 * sin(uTime * 0.83 - vWorld.z * 0.015);
   float e = d - swash;
-  foam += (1.0 - smoothstep(-4.0, 11.0, e)) * (0.45 + 0.60 * crumble);
+  // fade the wash out at the ring's own inner edge so the water never ends on a
+  // hard white line — the sand shader carries the swash from there inland
+  float edgeFade = smoothstep(0.0, 16.0, vShore);
+  foam += (1.0 - smoothstep(-4.0, 11.0, e)) * (0.40 + 0.55 * crumble) * edgeFade;
   foam = clamp(foam, 0.0, 1.0);
   vec3 foamCol = mix(uHorizon, vec3(1.0), 0.62) * (0.34 + 0.70 * uSunI);
   foamCol = mix(foamCol, foamCol * 0.22 + uNeon * 0.10, uNight);
@@ -472,7 +484,7 @@ export class Water {
     ou.uSpecCol.value.copy(moonCol).lerp(sunCol, dayW);
     // strong right at/after sunset (that is the hero hour), dim at night
     ou.uSpecGain.value = 0.30 + 1.55 * Math.pow(dayW, 0.6) * (0.35 + 0.65 * sunI);
-    ou.uSpecPow.value = THREE.MathUtils.lerp(180, 620, dayW);
+    ou.uSpecPow.value = THREE.MathUtils.lerp(140, 430, dayW);
 
     // body colour: deep teal by day, near-black indigo at night, tinted by sky
     const deep = this._c1.setHex(0x0f5f6b).multiplyScalar(0.16 + 0.55 * sunI);

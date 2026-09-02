@@ -224,8 +224,12 @@ export class Vegetation {
 
   // material shared by every plant: cheap lambert + vertex-shader sway
   makeMat(swayAmp, side){
-    const m = new THREE.MeshLambertMaterial({
+    // MeshStandardMaterial so the project's neon light rig (which only patches
+    // standard/physical materials) can inject its forward light loop — palms
+    // near a magenta sign must pick up magenta.
+    const m = new THREE.MeshStandardMaterial({
       vertexColors: true, side, flatShading: false,
+      roughness: 0.88, metalness: 0.0,
     });
     const uTime = this.uTime;
     m.onBeforeCompile = (sh) => {

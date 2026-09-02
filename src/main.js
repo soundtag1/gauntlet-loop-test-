@@ -10,6 +10,8 @@ import { Streets } from './world/streets.js';
 import { Props } from './world/props.js';
 import { Water } from './world/water.js';
 import { Vegetation } from './world/vegetation.js';
+import { Interiors } from './world/interiors.js';
+import { Economy } from './systems/economy.js';
 import { Vehicles } from './entities/vehicle.js';
 import { Player } from './entities/player.js';
 import { Traffic } from './systems/traffic.js';
@@ -81,9 +83,11 @@ export class Game {
     add(Water,'water');
     add(Vegetation,'vegetation');
     add(Props,'props');
+    add(Interiors,'interiors');
     add(Vehicles,'vehicles');
     add(Traffic,'traffic');
     add(Peds,'peds');
+    add(Economy,'economy');
     add(Player,'player');
     add(GameCamera,'gamecamera');
 

@@ -34,7 +34,8 @@ export class City {
     this.n=CONFIG.city.blocks; this.bs=CONFIG.city.blockSize; this.rw=CONFIG.city.roadWidth;
     this.span=this.n*(this.bs+this.rw);
     this.roadY=0.02;
-    this.buildings=[];   // {box} for collision
+    this.buildings=[];   // procedural filler buildings
+    this.venues=[];      // reserved street-facing plots for enterable, functional buildings
     this.emissives=[];
   }
 
@@ -56,6 +57,7 @@ export class City {
     this.buildGround();
     this.buildRoads();
     this.buildBlocks();
+    this.reserveVenues();
     return this;
   }
 
@@ -113,6 +115,63 @@ export class City {
       const core = Math.hypot(bx-mid, bz-mid)/mid;
       this.buildLots(c, D, dName, R, core);
     }
+  }
+
+  // Reserve a handful of street-facing plots for hand-built, enterable venues.
+  // These are REMOVED from this.buildings so the procedural generator does not
+  // drop an opaque box on top of them; src/world/interiors.js builds them instead.
+  reserveVenues(){
+    const KINDS = [
+      { kind:'bank',      sign:'PACIFIC MUTUAL', minW:22, minD:18 },
+      { kind:'store',     sign:'24/7 MARKET',    minW:16, minD:14 },
+      { kind:'diner',     sign:'THE SANDBAR',    minW:16, minD:14 },
+      { kind:'pawnshop',  sign:'GOLD & GUN',     minW:14, minD:12 },
+      { kind:'clothing',  sign:'SUNSET THREADS', minW:16, minD:14 },
+    ];
+    const sw = CONFIG.city.sidewalk;
+    // A plot is usable only if a point just past one face lands on a road, so the
+    // door has a pavement to open onto.
+    const streetFacing = (b)=>{
+      const probes = [
+        [b.x, b.z - b.d/2 - sw - 2.5, 0, -1],
+        [b.x, b.z + b.d/2 + sw + 2.5, 0,  1],
+        [b.x - b.w/2 - sw - 2.5, b.z, -1, 0],
+        [b.x + b.w/2 + sw + 2.5, b.z,  1, 0],
+      ];
+      for(const [px,pz,fx,fz] of probes){
+        if(this.isRoad(px,pz)) return { fx, fz };
+      }
+      return null;
+    };
+
+    const taken = new Set();
+    for(const K of KINDS){
+      let bestI = -1, bestScore = -Infinity, bestFace = null;
+      for(let i=0;i<this.buildings.length;i++){
+        if(taken.has(i)) continue;
+        const b = this.buildings[i];
+        if(b.w < K.minW || b.d < K.minD) continue;
+        if(b.district === 'industrial') continue;
+        const face = streetFacing(b);
+        if(!face) continue;
+        // prefer plots near the core so venues are easy to stumble across
+        const score = -(Math.hypot(b.x, b.z)) + (b.district==='strip' ? 220 : 0);
+        if(score > bestScore){ bestScore = score; bestI = i; bestFace = face; }
+      }
+      if(bestI < 0) continue;
+      const b = this.buildings[bestI];
+      taken.add(bestI);
+      this.venues.push({
+        kind:K.kind, sign:K.sign,
+        x:b.x, z:b.z, w:b.w, d:b.d,
+        h: Math.max(9, Math.min(b.h, 16)),   // venues stay low so the interior reads
+        facing: bestFace,                     // outward normal of the street face
+        district:b.district, seed:b.seed,
+      });
+    }
+    // drop reserved plots from the procedural set, highest index first
+    [...taken].sort((a,b)=>b-a).forEach(i=>this.buildings.splice(i,1));
+    return this.venues;
   }
 
   // Subdivide a block into lots and place a building per lot. Lot COUNT varies so
