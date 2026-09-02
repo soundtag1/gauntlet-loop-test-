@@ -126,20 +126,22 @@ float vnoise(vec2 p){
 // analytic wave normal — sum of directional sines, no derivatives needed
 vec3 waveNormal(vec2 p, float t, float fade){
   vec2 g = vec2(0.0);
+  float wob = vnoise(p * 0.0021) * 6.28;      // slow phase wander
+  float wob2 = vnoise(p * 0.0085 + 11.3) * 6.28;
   // long directional swell rolling towards the beach (+Z)
   vec2 d1 = normalize(vec2(0.18, 1.0));
   float k1 = 0.0165, a1 = 3.1;
-  g += d1 * (a1 * k1 * cos(dot(d1, p) * k1 + t * 0.75));
+  g += d1 * (a1 * k1 * cos(dot(d1, p) * k1 + t * 0.75 + wob));
   vec2 d2 = normalize(vec2(-0.85, 0.52));
   float k2 = 0.031, a2 = 1.05;
-  g += d2 * (a2 * k2 * cos(dot(d2, p) * k2 - t * 0.95));
+  g += d2 * (a2 * k2 * cos(dot(d2, p) * k2 - t * 0.95 + wob2));
   // chop
   vec2 d3 = normalize(vec2(0.92, -0.38));
   float k3 = 0.108, a3 = 0.30;
-  g += fade * d3 * (a3 * k3 * cos(dot(d3, p) * k3 + t * 2.1));
+  g += fade * d3 * (a3 * k3 * cos(dot(d3, p) * k3 + t * 2.1 + wob2 * 1.7));
   vec2 d4 = normalize(vec2(0.35, 0.94));
   float k4 = 0.205, a4 = 0.115;
-  g += fade * d4 * (a4 * k4 * cos(dot(d4, p) * k4 - t * 3.3));
+  g += fade * d4 * (a4 * k4 * cos(dot(d4, p) * k4 - t * 3.3 + wob * 2.3));
   // fine ripple, drives the glitter sparkle (rotated dirs, never axis-aligned)
   vec2 d5 = normalize(vec2(0.62, 0.79));
   g += fade * d5 * (0.050 * cos(dot(d5, p) * 0.66 + t * 3.9 + vnoise(p * 0.05) * 6.28));
@@ -163,7 +165,7 @@ void main(){
   vec3 skyC = mix(uHorizon, uZenith, pow(ty, 0.62)) * 0.88;
   // sun/moon glow smeared across the reflected ray
   float sd = max(dot(R, uSpecDir), 0.0);
-  skyC += uSpecCol * (pow(sd, 6.0) * 0.30 + pow(sd, 40.0) * 0.55) * uSpecGain;
+  skyC += uSpecCol * (pow(sd, 2.0) * 0.14 + pow(sd, 6.0) * 0.30 + pow(sd, 40.0) * 0.55) * uSpecGain;
 
   // --- body colour --------------------------------------------------------
   float depthF = smoothstep(0.0, 260.0, vShore);
@@ -189,22 +191,27 @@ void main(){
            * (0.55 + 0.85 * vnoise(vWorld.xz * 3.7 + uTime * 0.9));
   sp = pow(clamp(sp * 3.4, 0.0, 1.0), 1.35);
   float glint = sharp * (0.18 + 4.2 * sp * fade);
-  col += uSpecCol * uSpecGain * (glint * 3.0 + broad * 0.22);
+  float wide = pow(ndh, 5.0);
+  col += uSpecCol * uSpecGain * (glint * 3.0 + broad * 0.22 + wide * 0.10);
 
   // --- shoreline foam -----------------------------------------------------
+  float d = vShore - 12.0;                        // metres seaward of waterline
+  float env = 1.0 - smoothstep(0.0, 230.0, max(d, 0.0));
+  float ph = uTime * 0.155 - d * 0.019 + vnoise(vWorld.xz * 0.0055) * 1.6;
+  float w = fract(ph);
+  float crest = smoothstep(0.72, 0.965, w) * (1.0 - smoothstep(0.965, 1.0, w));
+  crest *= env * env;
+  float crumble = vnoise(vWorld.xz * 0.13 + vec2(uTime * 0.20, 0.0)) * 0.55
+                + vnoise(vWorld.xz * 0.48 - vec2(0.0, uTime * 0.34)) * 0.45;
+  float foam = crest * (0.35 + crumble * 1.15);
+  // second, broken crest line trailing each breaker
+  float w2 = fract(ph + 0.42);
+  foam += smoothstep(0.80, 0.98, w2) * env * env * crumble * 0.55;
+  // the swash sheet right at the waterline
   float swash = 6.5 * sin(uTime * 0.55 + vWorld.x * 0.010)
               + 4.0 * sin(uTime * 0.83 - vWorld.z * 0.015);
-  float e = vShore - 12.0 - swash;      // ocean starts 12u inland of the line
-  float band = 1.0 - smoothstep(0.0, 44.0, e);
-  float crumble = vnoise(vWorld.xz * 0.11 + vec2(uTime * 0.20, 0.0)) * 0.55
-                + vnoise(vWorld.xz * 0.42 - vec2(0.0, uTime * 0.34)) * 0.45;
-  float foam = clamp(band * (crumble * 1.9 - 0.30), 0.0, 1.0);
-  foam += (1.0 - smoothstep(-4.0, 9.0, e)) * 0.95;             // wash at the edge
-  // breaker lines further out
-  float e2 = vShore - 62.0 - swash * 1.7;
-  foam += (1.0 - smoothstep(0.0, 13.0, abs(e2))) * (0.35 + crumble * 0.75);
-  float e3 = vShore - 128.0 - swash * 2.4;
-  foam += (1.0 - smoothstep(0.0, 11.0, abs(e3))) * crumble * 0.55;
+  float e = d - swash;
+  foam += (1.0 - smoothstep(-4.0, 11.0, e)) * (0.45 + 0.60 * crumble);
   foam = clamp(foam, 0.0, 1.0);
   vec3 foamCol = mix(uHorizon, vec3(1.0), 0.62) * (0.34 + 0.70 * uSunI);
   foamCol = mix(foamCol, foamCol * 0.22 + uNeon * 0.10, uNight);
@@ -289,11 +296,11 @@ void main(){
   float swash = 6.5 * sin(uTime * 0.55 + vWorld.x * 0.010)
               + 4.0 * sin(uTime * 0.83 - vWorld.z * 0.015);
   float ee = e - swash;
-  float sheet = 1.0 - smoothstep(0.0, 22.0, ee);
+  float sheet = 1.0 - smoothstep(0.0, 26.0, ee);
   float crumble = vnoise(vWorld.xz * 0.22 + vec2(uTime * 0.20, 0.0)) * 0.6
                 + vnoise(vWorld.xz * 0.7 - vec2(0.0, uTime * 0.34)) * 0.4;
-  float foam = clamp(sheet * (crumble * 1.9 - 0.35), 0.0, 1.0);
-  foam += (1.0 - smoothstep(-6.0, 7.0, ee)) * 0.85;
+  float foam = clamp(sheet * (crumble * 2.1 - 0.45), 0.0, 1.0);
+  foam += (1.0 - smoothstep(-7.0, 6.0, ee)) * (0.55 + 0.45 * crumble);
   foam = clamp(foam, 0.0, 1.0);
   vec3 foamCol = mix(uHorizon, vec3(1.0), 0.62) * (0.34 + 0.70 * uSunI);
   foamCol = mix(foamCol, foamCol * 0.22 + uNeon * 0.10, uNight);
@@ -436,7 +443,7 @@ export class Water {
     ou.uSunDir.value.copy(sd);
 
     // night factor from sun elevation (independent of ctx so it can't throw)
-    const night = THREE.MathUtils.clamp(1.0 - (sd.y + 0.14) / 0.30, 0, 1);
+    const night = THREE.MathUtils.clamp((0.46 - sunI) / 0.34, 0, 1);
     ou.uNight.value = night;
     su.uNight.value = night;
     ou.uSunI.value = sunI;
